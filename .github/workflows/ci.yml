@@ -1,0 +1,43 @@
+name: CI
+
+on: push
+
+# Cancel superseded runs on the same ref so a fresh push isn't queued behind one
+# that no longer matters.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-build:
+    runs-on: ubuntu-latest
+
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      # `next build` also runs the TypeScript checker, so this covers type errors.
+      # Auth.js reads these at module load; the values are throwaways, not secrets.
+      - name: Build
+        run: npm run build
+        env:
+          GOOGLE_CLIENT_ID: ci-placeholder
+          GOOGLE_CLIENT_SECRET: ci-placeholder
+          AUTH_SECRET: ci-placeholder-secret-value-0000000000000000
+          OWNER_EMAIL: ci@example.com
