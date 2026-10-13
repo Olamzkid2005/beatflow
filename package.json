@@ -6,9 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "m0:probe": "node tools/m0-probe/run.mjs"
   },
   "dependencies": {
+    "mediabunny": "^1.61.4",
     "next": "16.4.0",
     "next-auth": "^5.0.0-beta.32",
     "react": "19.3.0",

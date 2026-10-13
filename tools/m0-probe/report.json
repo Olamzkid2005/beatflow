@@ -1,0 +1,214 @@
+{
+  "ranAt": "2026-10-13T13:24:38.369Z",
+  "chrome": "Chrome/155.0.8059.40",
+  "probe": {
+    "steps": {
+      "environment": {
+        "ok": true,
+        "ms": 0,
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+        "platform": "MacIntel",
+        "hardwareConcurrency": 2,
+        "crossOriginIsolated": false,
+        "secureContext": true
+      },
+      "webcodecsVideo": {
+        "ok": true,
+        "ms": 1148,
+        "isConfigSupported": true,
+        "encoderState": "configured",
+        "chunks": 5,
+        "keyChunks": 3,
+        "encoderError": null
+      },
+      "webcodecsAudio": {
+        "ok": true,
+        "ms": 53,
+        "isConfigSupported": true,
+        "encoderState": "configured",
+        "chunks": 50,
+        "encoderError": null
+      },
+      "mediabunnyCapabilities": {
+        "ok": true,
+        "ms": 138,
+        "videoVariants": {
+          "numeric Quality": {
+            "supported": false,
+            "encoderConfig": null
+          },
+          "Quality({bitrate})": {
+            "supported": true,
+            "encoderConfig": null
+          },
+          "deprecated bitrate": {
+            "supported": true,
+            "encoderConfig": null
+          },
+          "pinned avc1.640028": {
+            "supported": true,
+            "encoderConfig": null
+          },
+          "pinned only": {
+            "supported": true,
+            "encoderConfig": null
+          }
+        },
+        "canEncodeAudio": true,
+        "firstEncodableVideoCodec": "avc",
+        "encodableVideoCodecs": [
+          "avc",
+          "vp9",
+          "av1",
+          "vp8"
+        ],
+        "encodableAudioCodecs": [
+          "aac",
+          "opus",
+          "pcm-s16",
+          "pcm-s16be",
+          "pcm-s24",
+          "pcm-s24be",
+          "pcm-s32",
+          "pcm-s32be",
+          "pcm-f32",
+          "pcm-f32be",
+          "pcm-f64",
+          "pcm-f64be",
+          "pcm-u8",
+          "pcm-s8",
+          "ulaw",
+          "alaw"
+        ]
+      },
+      "renderMp4": {
+        "ok": true,
+        "ms": 344,
+        "mimeType": "video/mp4; codecs=\"avc1.640c28, mp4a.40.2\"",
+        "outputState": "finalized",
+        "bytes": 108389,
+        "saved": true,
+        "videoEncoderConfig": {
+          "codec": "avc1.640028",
+          "width": 1920,
+          "height": 1080,
+          "displayWidth": 1920,
+          "displayHeight": 1080,
+          "bitrate": 1500000,
+          "bitrateMode": "variable",
+          "alpha": "discard",
+          "avc": {
+            "format": "avc"
+          }
+        },
+        "audioEncoderConfig": {
+          "codec": "mp4a.40.2",
+          "numberOfChannels": 2,
+          "sampleRate": 48000,
+          "bitrate": 256000,
+          "aac": {
+            "format": "aac"
+          }
+        }
+      },
+      "readBack": {
+        "ok": true,
+        "ms": 151,
+        "duration": 5.077333333333334,
+        "videoCodec": "avc",
+        "width": 1920,
+        "height": 1080,
+        "videoPackets": 5,
+        "videoFrameRate": 1,
+        "videoAverageBitrate": 97237,
+        "audioCodec": "aac",
+        "audioSampleRate": 48000,
+        "audioChannels": 2,
+        "audioAverageBitrate": 54300,
+        "decodedFrames": 5,
+        "decodedWidth": 1920,
+        "decodedAudioBuffers": 238,
+        "decodedAudioSeconds": 5.077
+      },
+      "chromePlayback": {
+        "ok": true,
+        "ms": 1530,
+        "duration": 5.077333,
+        "videoWidth": 1920,
+        "videoHeight": 1080,
+        "readyState": 4,
+        "playedTo": 1.093477,
+        "seekedTo": 4,
+        "error": null
+      }
+    }
+  },
+  "console": [],
+  "mp4": {
+    "fileSize": 108389,
+    "topLevel": [
+      {
+        "type": "ftyp",
+        "offset": 0,
+        "size": 28
+      },
+      {
+        "type": "moov",
+        "offset": 28,
+        "size": 2193
+      },
+      {
+        "type": "mdat",
+        "offset": 2221,
+        "size": 106168
+      }
+    ],
+    "moovOffset": 28,
+    "mdatOffset": 2221,
+    "moovBeforeMdat": true,
+    "hasEdts": false,
+    "hasElst": false,
+    "movie": {
+      "timescale": 57600,
+      "duration": 292454,
+      "seconds": 5.077326388888889
+    },
+    "tracks": [
+      {
+        "handler": "vide",
+        "codec": "avc1",
+        "codedWidth": 1920,
+        "codedHeight": 1080,
+        "displayWidth": 1920,
+        "displayHeight": 1080,
+        "sampleRate": null,
+        "channels": null,
+        "mediaTimescale": 57600,
+        "mediaSeconds": 5,
+        "sampleCount": 5
+      },
+      {
+        "handler": "soun",
+        "codec": "mp4a",
+        "codedWidth": null,
+        "codedHeight": null,
+        "displayWidth": 0,
+        "displayHeight": 0,
+        "sampleRate": 48000,
+        "channels": 2,
+        "mediaTimescale": 48000,
+        "mediaSeconds": 5.077333333333334,
+        "sampleCount": 238
+      }
+    ]
+  },
+  "http": {
+    "mediaRequests": [
+      {
+        "method": "GET",
+        "path": "/test.mp4",
+        "range": "bytes=0-"
+      }
+    ]
+  }
+}

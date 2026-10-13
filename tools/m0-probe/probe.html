@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>BeatFlow M0 capability probe</title>
+    <style>
+      body {
+        font: 14px/1.5 system-ui, sans-serif;
+        margin: 0;
+        padding: 16px;
+      }
+      canvas,
+      video {
+        width: 320px;
+        height: auto;
+        display: block;
+        margin-top: 12px;
+        background: #000;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>BeatFlow M0 capability probe</h1>
+    <p id="status">running…</p>
+    <canvas id="frame" width="1920" height="1080"></canvas>
+    <video id="player" muted playsinline></video>
+
+    <script type="module">
+      import {
+        ALL_FORMATS,
+        AudioBufferSink,
+        AudioBufferSource,
+        BlobSource,
+        BufferTarget,
+        CanvasSink,
+        CanvasSource,
+        Input,
+        Mp4OutputFormat,
+        Output,
+        Quality,
+        canEncodeAudio,
+        canEncodeVideo,
+        getEncodableAudioCodecs,
+        getEncodableVideoCodecs,
+        getFirstEncodableVideoCodec,
+      } from "/mediabunny.mjs";
+
+      // Matches the render settings BeatFlow v1 is specified to use (spec section 5).
+      const WIDTH = 1920;
+      const HEIGHT = 1080;
+      const FPS = 1;
+      const SECONDS = 5;
+      const VIDEO_BITRATE = 1_500_000;
+      const AUDIO_BITRATE = 256_000;
+      const KEYFRAME_INTERVAL = 2;
+      const SAMPLE_RATE = 48_000;
+      const CHANNELS = 2;
+
+      const status = document.getElementById("status");
+      const canvas = document.getElementById("frame");
+      const player = document.getElementById("player");
+
+      const report = { steps: {} };
+
+      async function step(name, fn) {
+        status.textContent = `running ${name}…`;
+        const started = performance.now();
+        try {
+          const value = await fn();
+          report.steps[name] = {
+            ok: true,
+            ms: Math.round(performance.now() - started),
+            ...value,
+          };
+        } catch (error) {
+          report.steps[name] = {
+            ok: false,
+            ms: Math.round(performance.now() - started),
+            error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+          };
+        }
+      }
+
+      /** Draws one 1080p frame. Deliberately plain so the probe tests encoding, not rendering. */
+      function drawFrame(index) {
+        const ctx = canvas.getContext("2d", { alpha: false });
+        const t = index / FPS;
+        ctx.fillStyle = index % 2 === 0 ? "#101018" : "#1b1030";
+        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "700 120px system-ui, sans-serif";
+        ctx.fillText("BeatFlow", 100, 400);
+        ctx.font = "400 64px system-ui, sans-serif";
+        ctx.fillText(`frame ${index} · t=${t.toFixed(1)}s`, 100, 520);
+      }
+
+      /** 440 Hz stereo sine, so the encoded audio track carries real signal. */
+      function makeTone(seconds) {
+        const context = new OfflineAudioContext(CHANNELS, seconds * SAMPLE_RATE, SAMPLE_RATE);
+        const buffer = context.createBuffer(CHANNELS, seconds * SAMPLE_RATE, SAMPLE_RATE);
+        for (let channel = 0; channel < CHANNELS; channel += 1) {
+          const data = buffer.getChannelData(channel);
+          for (let i = 0; i < data.length; i += 1) {
+            data[i] = 0.2 * Math.sin((2 * Math.PI * 440 * i) / SAMPLE_RATE);
+          }
+        }
+        return buffer;
+      }
+
+      /** Encodes real frames with WebCodecs directly, to catch encoders that claim support and then fail. */
+      async function encodeVideoForReal() {
+        const config = {
+          codec: "avc1.640028",
+          width: WIDTH,
+          height: HEIGHT,
+          bitrate: VIDEO_BITRATE,
+          framerate: FPS,
+        };
+        const support = await VideoEncoder.isConfigSupported(config);
+
+        let chunks = 0;
+        let keyChunks = 0;
+        let encoderError = null;
+        const encoder = new VideoEncoder({
+          output: (chunk) => {
+            chunks += 1;
+            if (chunk.type === "key") keyChunks += 1;
+          },
+          error: (error) => {
+            encoderError = `${error.name}: ${error.message}`;
+          },
+        });
+        encoder.configure(config);
+
+        const duration = 1e6 / FPS;
+        for (let i = 0; i < SECONDS * FPS; i += 1) {
+          drawFrame(i);
+          const frame = new VideoFrame(canvas, {
+            timestamp: Math.round((i * 1e6) / FPS),
+            duration,
+          });
+          encoder.encode(frame, { keyFrame: i % KEYFRAME_INTERVAL === 0 });
+          frame.close();
+        }
+        await encoder.flush();
+        const state = encoder.state;
+        encoder.close();
+
+        return {
+          isConfigSupported: Boolean(support.supported),
+          encoderState: state,
+          chunks,
+          keyChunks,
+          encoderError,
+        };
+      }
+
+      /** Same idea for audio: a real encode and flush, not just a support query. */
+      async function encodeAudioForReal() {
+        const config = {
+          codec: "mp4a.40.2",
+          sampleRate: SAMPLE_RATE,
+          numberOfChannels: CHANNELS,
+          bitrate: AUDIO_BITRATE,
+        };
+        const support = await AudioEncoder.isConfigSupported(config);
+
+        const buffer = makeTone(1);
+        const planar = new Float32Array(buffer.length * CHANNELS);
+        for (let channel = 0; channel < CHANNELS; channel += 1) {
+          planar.set(buffer.getChannelData(channel), channel * buffer.length);
+        }
+
+        let chunks = 0;
+        let encoderError = null;
+        const encoder = new AudioEncoder({
+          output: () => {
+            chunks += 1;
+          },
+          error: (error) => {
+            encoderError = `${error.name}: ${error.message}`;
+          },
+        });
+        encoder.configure(config);
+        encoder.encode(
+          new AudioData({
+            format: "f32-planar",
+            sampleRate: SAMPLE_RATE,
+            numberOfFrames: buffer.length,
+            numberOfChannels: CHANNELS,
+            timestamp: 0,
+            data: planar,
+          }),
+        );
+        await encoder.flush();
+        const state = encoder.state;
+        encoder.close();
+
+        return {
+          isConfigSupported: Boolean(support.supported),
+          encoderState: state,
+          chunks,
+          encoderError,
+        };
+      }
+
+      let renderedBlob = null;
+      let videoEncoderConfig = null;
+      let audioEncoderConfig = null;
+
+      await step("environment", async () => ({
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        hardwareConcurrency: navigator.hardwareConcurrency,
+        crossOriginIsolated: globalThis.crossOriginIsolated,
+        secureContext: globalThis.isSecureContext,
+      }));
+
+      await step("webcodecsVideo", encodeVideoForReal);
+      await step("webcodecsAudio", encodeAudioForReal);
+
+      // Mediabunny builds a WebCodecs codec string itself when one is not given, and it picked a
+      // level that cannot carry 1080p here. These variants pin down which spelling actually works.
+      const VIDEO_VARIANTS = {
+        "numeric Quality": { quality: new Quality(VIDEO_BITRATE) },
+        "Quality({bitrate})": { quality: new Quality({ bitrate: VIDEO_BITRATE }) },
+        "deprecated bitrate": { bitrate: VIDEO_BITRATE },
+        "pinned avc1.640028": {
+          quality: new Quality({ bitrate: VIDEO_BITRATE }),
+          fullCodecString: "avc1.640028",
+        },
+        "pinned only": { fullCodecString: "avc1.640028" },
+      };
+
+      await step("mediabunnyCapabilities", async () => {
+        const variants = {};
+        for (const [name, extra] of Object.entries(VIDEO_VARIANTS)) {
+          let encoderConfig = null;
+          try {
+            const supported = await canEncodeVideo("avc", {
+              width: WIDTH,
+              height: HEIGHT,
+              frameRate: FPS,
+              ...extra,
+            });
+            variants[name] = { supported, encoderConfig };
+          } catch (error) {
+            variants[name] = {
+              supported: false,
+              error: error instanceof Error ? error.message : String(error),
+            };
+          }
+        }
+
+        return {
+          videoVariants: variants,
+          canEncodeAudio: await canEncodeAudio("aac", {
+            numberOfChannels: CHANNELS,
+            sampleRate: SAMPLE_RATE,
+            quality: new Quality({ bitrate: AUDIO_BITRATE }),
+          }),
+          firstEncodableVideoCodec: await getFirstEncodableVideoCodec(["avc", "hevc", "vp9", "av1"]),
+          encodableVideoCodecs: await getEncodableVideoCodecs(),
+          encodableAudioCodecs: await getEncodableAudioCodecs(),
+        };
+      });
+
+      await step("renderMp4", async () => {
+        const target = new BufferTarget();
+        const output = new Output({
+          format: new Mp4OutputFormat({ fastStart: "in-memory" }),
+          target,
+        });
+
+        // Reports the WebCodecs config Mediabunny actually builds, which is where the level was lost.
+        const videoSource = new CanvasSource(canvas, {
+          codec: "avc",
+          quality: new Quality({ bitrate: VIDEO_BITRATE }),
+          fullCodecString: "avc1.640028",
+          keyFrameInterval: KEYFRAME_INTERVAL,
+          onEncoderConfig: (config) => {
+            videoEncoderConfig = config;
+          },
+        });
+        const audioSource = new AudioBufferSource({
+          codec: "aac",
+          quality: new Quality({ bitrate: AUDIO_BITRATE }),
+          onEncoderConfig: (config) => {
+            audioEncoderConfig = config;
+          },
+        });
+        void videoEncoderConfig;
+        void audioEncoderConfig;
+        output.addVideoTrack(videoSource);
+        output.addAudioTrack(audioSource);
+
+        await output.start();
+        for (let i = 0; i < SECONDS * FPS; i += 1) {
+          drawFrame(i);
+          await videoSource.add(i / FPS, 1 / FPS);
+        }
+        await audioSource.add(makeTone(SECONDS));
+        await output.finalize();
+
+        const mimeType = await output.getMimeType();
+        renderedBlob = new Blob([target.buffer], { type: "video/mp4" });
+
+        const response = await fetch("/save", { method: "POST", body: renderedBlob });
+
+        return {
+          mimeType,
+          outputState: output.state,
+          bytes: renderedBlob.size,
+          saved: response.ok || response.status === 204,
+          videoEncoderConfig,
+          audioEncoderConfig,
+        };
+      });
+
+      await step("readBack", async () => {
+        const input = new Input({ source: new BlobSource(renderedBlob), formats: ALL_FORMATS });
+        const videoTrack = await input.getPrimaryVideoTrack();
+        const audioTrack = await input.getPrimaryAudioTrack();
+        if (!videoTrack || !audioTrack) throw new Error("Rendered file is missing a track.");
+
+        // Decoding every frame proves the bitstream is actually decodable, not just well-formed.
+        const sink = new CanvasSink(videoTrack);
+        let decoded = 0;
+        let decodedWidth = 0;
+        for await (const wrapped of sink.canvases(0, SECONDS)) {
+          decoded += 1;
+          decodedWidth = wrapped.canvas.width;
+        }
+
+        // Decode the audio too: a readable AAC track that will not decode is worthless for YouTube.
+        const audioSink = new AudioBufferSink(audioTrack);
+        let audioBuffers = 0;
+        let decodedAudioSeconds = 0;
+        for await (const wrapped of audioSink.buffers(0, SECONDS + 1)) {
+          audioBuffers += 1;
+          decodedAudioSeconds += wrapped.buffer.duration;
+        }
+
+        const videoStats = await videoTrack.computePacketStats(50);
+        const audioStats = await audioTrack.computePacketStats(50);
+
+        return {
+          duration: await input.computeDuration(),
+          videoCodec: await videoTrack.getCodec(),
+          width: await videoTrack.getCodedWidth(),
+          height: await videoTrack.getCodedHeight(),
+          videoPackets: videoStats.packetCount,
+          videoFrameRate: Number(videoStats.averagePacketRate.toFixed(3)),
+          videoAverageBitrate: Math.round(videoStats.averageBitrate),
+          audioCodec: await audioTrack.getCodec(),
+          audioSampleRate: await audioTrack.getSampleRate(),
+          audioChannels: await audioTrack.getNumberOfChannels(),
+          audioAverageBitrate: Math.round(audioStats.averageBitrate),
+          decodedFrames: decoded,
+          decodedWidth,
+          decodedAudioBuffers: audioBuffers,
+          decodedAudioSeconds: Number(decodedAudioSeconds.toFixed(3)),
+        };
+      });
+
+      await step("chromePlayback", async () => {
+        player.src = "/test.mp4";
+        await new Promise((resolve, reject) => {
+          player.addEventListener("loadedmetadata", resolve, { once: true });
+          player.addEventListener("error", () => reject(new Error("video element failed to load")), {
+            once: true,
+          });
+          setTimeout(() => reject(new Error("timed out loading the MP4 in a video element")), 20_000);
+        });
+
+        await player.play();
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        const playedTo = player.currentTime;
+
+        // A seek only works once the moov atom has been read, so this also checks fast start.
+        player.currentTime = 4;
+        await new Promise((resolve) => {
+          player.addEventListener("seeked", resolve, { once: true });
+          setTimeout(resolve, 5_000);
+        });
+
+        return {
+          duration: player.duration,
+          videoWidth: player.videoWidth,
+          videoHeight: player.videoHeight,
+          readyState: player.readyState,
+          playedTo,
+          seekedTo: player.currentTime,
+          error: player.error ? `${player.error.code}: ${player.error.message}` : null,
+        };
+      });
+
+      status.textContent = "done";
+      globalThis.__probe = report;
+    </script>
+  </body>
+</html>

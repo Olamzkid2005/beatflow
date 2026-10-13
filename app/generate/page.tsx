@@ -220,6 +220,17 @@ export default function GeneratePage() {
             accept="video/mp4"
             onChange={(event) => setFile(event.target.files?.[0] ?? null)}
           />
+          <span className="text-xs text-zinc-500">
+            Needs a 5-second MP4. One is bundled:{" "}
+            <a
+              className="underline"
+              href="/beatflow-m0-test-5s.mp4"
+              download="beatflow-m0-test-5s.mp4"
+            >
+              beatflow-m0-test-5s.mp4
+            </a>{" "}
+            (1080p, 1 fps, from <code className="font-mono">npm run m0:probe</code>).
+          </span>
         </label>
 
         <div className="flex flex-wrap items-center gap-3">

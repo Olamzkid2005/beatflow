@@ -57,6 +57,26 @@ npm run dev
 `http://localhost:3113` is the port used during M0 verification; plain `npm run dev`
 uses 3000.
 
+## M0 capability probe
+
+```bash
+npm run m0:probe          # headless
+npm run m0:probe -- --headful
+```
+
+Runs `tools/m0-probe/` in the installed Chrome (override with `CHROME_PATH`) and answers
+the spec's section 12 assumptions that do not need a Google account. It performs **real**
+H.264 High and AAC encodes rather than trusting `isConfigSupported`, which is known to
+report AAC support and then fail, then renders a 5-second 1080p MP4 through Mediabunny
+and inspects the bytes.
+
+Outputs:
+
+- `public/beatflow-m0-test-5s.mp4` — the test video the M0 page uploads to YouTube.
+- `tools/m0-probe/report.json` — the full run, including the MP4's box layout.
+
+It is a test harness, not part of the app: nothing under `tools/` is imported by Next.
+
 ## Structure
 
 ```
@@ -77,6 +97,13 @@ lib/
   youtube/metadata.ts     field validation (zod) and the videos.insert body
   youtube/uploader.ts     browser-side chunked resumable upload
 types/next-auth.d.ts      session and JWT augmentation
+tools/m0-probe/           Chrome capability probe (test-only, not part of the app)
+  run.mjs                 serves the page, drives headless Chrome over CDP
+  probe.html              the in-browser checks
+  mp4.mjs                 byte-level MP4 box reader, used instead of ffprobe
+  server.mjs              localhost server with Range support
+public/
+  beatflow-m0-test-5s.mp4 5-second 1080p test video from the probe
 ```
 
 `lib/renderer/` does not exist yet; M1 adds it. It must stay free of React imports so
