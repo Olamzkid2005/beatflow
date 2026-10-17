@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { FIRST_LIGHT_TEMPLATE } from "../lib/templates/first-light.ts";
+import { DEFAULT_TEMPLATE_ID, TEMPLATE_PRESETS } from "../lib/templates/index.ts";
 import { layoutText, MAX_TEXT_LINES } from "../lib/renderer/scene.ts";
 import {
   interpolateTemplateValue,
@@ -14,6 +15,73 @@ function measure(text, font) {
   const size = Number(/(\d+(?:\.\d+)?)px/.exec(font)?.[1] ?? 16);
   return text.length * size * 0.55;
 }
+
+/** Same width rule the scene uses, including letter spacing. */
+function textWidth(text, font, letterSpacing = 0) {
+  return measure(text, font) + (text.length > 0 ? letterSpacing * (text.length - 1) : 0);
+}
+
+const KNOWN_VARIABLES = new Set([
+  "track_name",
+  "filename",
+  "producer_name",
+  "bpm",
+  "key",
+  "year",
+  "purchase_url",
+]);
+
+function textLayers(template) {
+  return template.layers.filter((layer) => layer.type === "text");
+}
+
+test("every preset parses, is named uniquely, and binds only known variables", () => {
+  const names = new Set();
+  for (const preset of TEMPLATE_PRESETS) {
+    assert.equal(parseTemplate(preset.template).name, preset.template.name);
+    assert.ok(!names.has(preset.template.name), `duplicate preset name ${preset.template.name}`);
+    names.add(preset.template.name);
+    assert.ok(preset.description.length > 0, `${preset.template.name} needs a description`);
+    assert.ok(
+      textLayers(preset.template).some((layer) => layer.value.includes("{{track_name}}")),
+      `${preset.template.name} must show the track name`,
+    );
+    for (const layer of textLayers(preset.template)) {
+      for (const [, name] of layer.value.matchAll(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g)) {
+        assert.ok(KNOWN_VARIABLES.has(name), `${preset.template.name} uses unknown {{${name}}}`);
+      }
+    }
+  }
+  assert.equal(TEMPLATE_PRESETS[0].id, DEFAULT_TEMPLATE_ID);
+});
+
+test("a very long title fits every preset's title layer", () => {
+  const title =
+    "Midnight Loop (Extended Visualizer Version Featuring A Guest Verse And A Very Long Name That Keeps Going)";
+  for (const preset of TEMPLATE_PRESETS) {
+    const titles = textLayers(preset.template).filter((layer) => layer.value.includes("{{track_name}}"));
+    assert.ok(titles.length > 0, `${preset.template.name} has no title layer`);
+    for (const layer of titles) {
+      const family = layer.fontFamily;
+      const layout = layoutText({
+        text: title,
+        fontSize: layer.fontSize,
+        minFontSize: layer.minFontSize,
+        maxWidth: layer.maxWidth,
+        weight: layer.fontWeight,
+        family,
+        letterSpacing: layer.letterSpacing,
+        measure,
+      });
+      assert.ok(layout.lines.length <= MAX_TEXT_LINES, preset.template.name);
+      assert.ok(layout.fontSize >= layer.minFontSize, preset.template.name);
+      for (const line of layout.lines) {
+        const width = textWidth(line, `${layer.fontWeight} ${layout.fontSize}px ${family}`, layer.letterSpacing);
+        assert.ok(width <= layer.maxWidth, `${preset.template.name}: "${line}" is ${width}px wide`);
+      }
+    }
+  }
+});
 
 test("first-light preset validates against schema v1", () => {
   assert.equal(FIRST_LIGHT_TEMPLATE.schemaVersion, 1);

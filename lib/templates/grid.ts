@@ -1,0 +1,85 @@
+import { parseTemplate } from "@/lib/renderer/template-schema";
+
+/**
+ * M2 preset: editorial split. The photo stays visible on the right half while
+ * the left column carries the text, so busy artwork never sits under the title.
+ */
+export const GRID_TEMPLATE = parseTemplate({
+  schemaVersion: 1,
+  name: "Grid",
+  canvas: {
+    width: 1920,
+    height: 1080,
+    backgroundColor: "#07070c",
+  },
+  layers: [
+    {
+      type: "image",
+      binding: "background_image",
+      fit: "cover",
+      offsetX: 0.35,
+      offsetY: 0,
+      opacity: 1,
+    },
+    {
+      type: "rect",
+      x: 0,
+      y: 0,
+      width: 1010,
+      height: 1080,
+      fill: "#07070c",
+      opacity: 0.78,
+      radius: 0,
+    },
+    {
+      type: "rect",
+      x: 64,
+      y: 96,
+      width: 120,
+      height: 4,
+      fill: "#8ef0c2",
+      opacity: 1,
+      radius: 2,
+    },
+    {
+      type: "text",
+      value: "{{producer_name}}",
+      x: 64,
+      y: 130,
+      maxWidth: 880,
+      fontFamily: "JetBrains Mono",
+      fontWeight: 500,
+      fontSize: 24,
+      minFontSize: 18,
+      color: "#8ef0c2",
+      align: "left",
+      uppercase: true,
+      letterSpacing: 8,
+    },
+    {
+      type: "text",
+      value: "{{track_name}}",
+      x: 62,
+      y: 430,
+      maxWidth: 880,
+      fontFamily: "Inter",
+      fontWeight: 700,
+      fontSize: 108,
+      minFontSize: 50,
+      color: "#f4f2ff",
+      align: "left",
+      uppercase: false,
+      letterSpacing: -1.5,
+    },
+    {
+      type: "rect",
+      x: 64,
+      y: 948,
+      width: 880,
+      height: 2,
+      fill: "#3a3750",
+      opacity: 1,
+      radius: 1,
+    },
+  ],
+});

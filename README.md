@@ -29,11 +29,19 @@ failure — see `docs/M0-FINDINGS.md` section 7.
 
 **M1 — render proof (in progress).** `lib/renderer/` turns an MP3 plus a background photo
 into a 1080p MP4 in the browser (Mediabunny + WebCodecs) with a live preview, stage
-progress, cancel, download, and a hand-off into the upload desk. One hard-coded template,
-`First Light`. Deployed CORS, the unreadable upload response, scheduled
-publication/processing, and the owner's actual quota remain unverified; uploading a
-rendered file to YouTube by hand is still to be recorded. See `docs/M0-FINDINGS.md` for
-the section 3 and section 12 research answers and the real-project acceptance checklist.
+progress, cancel, download, and a hand-off into the upload desk. Deployed CORS, the
+unreadable upload response, scheduled publication/processing, and the owner's actual
+quota remain unverified; uploading a rendered file to YouTube by hand is still to be
+recorded. See `docs/M0-FINDINGS.md` for the section 3 and section 12 research answers and
+the real-project acceptance checklist.
+
+**M2 — template engine (in progress).** Templates are data, validated by zod v1 before
+anything renders: `First Light` (lower third), `Pulse` (centred title) and `Grid`
+(editorial split) ship in `lib/templates/`, and the studio's picker switches the live
+preview instantly. Title auto-fit shrinks and wraps to three lines, and a 6000 px photo is
+downscaled to 1920 px before it is drawn. Verified in Chrome; still to exercise on the
+deployed origin with a real track, and the Konva editor the schema was kept independent
+for is later work.
 
 ## Environment variables
 
@@ -144,7 +152,8 @@ tested and reused: `template-schema.ts` (zod v1 schema and interpolation), `asse
 (decode, downscale, fonts), `scene.ts` (`drawScene`, `layoutText`), `audio.ts` (MP3
 decode), `capabilities.ts` (encoder checks), `encode.ts` (Mediabunny MP4), `index.ts`
 (`renderVideo`, `previewFrame`). `lib/templates/` holds the presets and
-`components/render-studio.tsx` is the UI that drives them.
+`components/render-studio.tsx` is the UI that drives them. `lib/templates/index.ts`
+lists the presets the picker offers; adding one is a new file plus an entry there.
 
 ## Security
 

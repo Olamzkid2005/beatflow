@@ -1,5 +1,29 @@
 # BeatFlow review and repair progress
 
+## Session: M2 template engine (in progress)
+
+- Added two presets beside `First Light`: `Pulse` (centred title on a full scrim, warm accent,
+  drop shadow) and `Grid` (editorial split with the photo cropped to the right half and the
+  text on a protected left column). `lib/templates/index.ts` exposes them as
+  `TEMPLATE_PRESETS` with an id, description and the parsed template.
+- The render studio now has a template picker that switches the live preview immediately; the
+  chosen preset is snapshotted per render, so it cannot change frames of an in-flight export.
+  The canvas and caption follow the selected template.
+- Schema strictness caught a real mistake while adding presets: `Pulse` initially used an
+  8-digit hex shadow color and the v1 schema rejected it at module load, exactly as the
+  fail-fast parse is meant to. The preset now uses six-digit hex.
+- New regression tests: every preset parses, has a unique name, binds only the documented
+  variables, and its title layer fits a 115-character title within three lines and its own
+  `maxWidth`. Suite is 37/37 with lint, `tsc --noEmit` and a production build clean.
+- Real Chrome 155 checks (headless, production build, synthetic owner session): the three
+  presets draw visibly different previews and the caption follows the selection; a
+  115-character title leaves every title column untouched (pixel-uniform strip just past each
+  template's `maxWidth`, covering the accent bar and rules); a 6000 × 4000 photo is decoded and
+  downscaled with correct geometry (left/right halves and centre square sampled from the
+  preview) and renders a 12 s MP4 in 1.3 s that passes the structural checks.
+- Still open for M2: exercising the presets on the deployed origin and on a real track, and the
+  Konva template editor that the schema was kept independent for.
+
 ## Session: M1 render engine (in progress)
 
 - Built the engine under `lib/renderer/`, kept free of React imports: v1 zod template schema

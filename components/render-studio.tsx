@@ -8,13 +8,14 @@ import {
   Button,
   buttonClass,
   Card,
+  cn,
   Field,
   Input,
   Progress,
   StatusDot,
 } from "@/components/ui/primitives";
 import type { RenderCapabilities, RenderProgress } from "@/lib/renderer";
-import { FIRST_LIGHT_TEMPLATE } from "@/lib/templates/first-light";
+import { DEFAULT_TEMPLATE_ID, TEMPLATE_PRESETS } from "@/lib/templates";
 
 type Phase = "idle" | "rendering" | "done" | "cancelled" | "error";
 
@@ -65,6 +66,7 @@ export function RenderStudio({
   producerName: string;
   onRenderedFile: (file: File) => void;
 }) {
+  const [presetId, setPresetId] = useState(DEFAULT_TEMPLATE_ID);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [trackName, setTrackName] = useState("");
@@ -102,16 +104,21 @@ export function RenderStudio({
   // re-decoding the photo (memory rule in section 5).
   const drawPreviewRef = useRef<() => Promise<void>>(async () => {});
 
+  // The preset is snapshotted here, so switching it mid-render cannot change
+  // the frames an in-flight export already produced (spec section 6).
+  const preset = TEMPLATE_PRESETS.find((option) => option.id === presetId) ?? TEMPLATE_PRESETS[0];
+  const template = preset.template;
+
   // Live preview: same drawScene the export uses, no encoding (spec section 5).
   useEffect(() => {
     drawPreviewRef.current = async () => {
       const renderer = await import("@/lib/renderer");
-      await renderer.ensureTemplateFonts(FIRST_LIGHT_TEMPLATE);
+      await renderer.ensureTemplateFonts(template);
       const canvas = canvasRef.current;
       if (!canvas) return;
       renderer.previewFrame(
         canvas,
-        FIRST_LIGHT_TEMPLATE,
+        template,
         {
           track_name: trackName || "Track title",
           producer_name: producerName,
@@ -121,7 +128,7 @@ export function RenderStudio({
       );
     };
     drawPreviewRef.current().catch(() => {});
-  }, [trackName, producerName, audioFile]);
+  }, [template, trackName, producerName, audioFile]);
 
   // Decode the background once per file and reuse it (memory rule in section 5).
   useEffect(() => {
@@ -192,7 +199,7 @@ export function RenderStudio({
         {
           audio: audioFile,
           background: imageFile,
-          template: FIRST_LIGHT_TEMPLATE,
+          template,
           vars: {
             track_name: resolvedName,
             producer_name: producerName,
@@ -246,13 +253,13 @@ export function RenderStudio({
           </div>
           <h2 className="mt-2 text-xl font-semibold tracking-[-0.02em]">Render a beat video</h2>
           <p className="mt-1 max-w-xl text-sm leading-6 text-on-surface-variant">
-            Add an MP3 and a background photo. The first template renders a 1080p MP4 in this
-            browser, ready to download or send to the upload desk.
+            Pick a template, then add an MP3 and a background photo. The render happens in this
+            browser and produces a 1080p MP4 ready to download or send to the upload desk.
           </p>
         </div>
         <Badge tone={unsupported ? "danger" : "primary"}>
           <StatusDot tone={unsupported ? "danger" : "primary"} />
-          {unsupported ? "Renderer unavailable" : "M1 · Render proof"}
+          {unsupported ? "Renderer unavailable" : "M2 · Template engine"}
         </Badge>
       </div>
 
@@ -261,14 +268,14 @@ export function RenderStudio({
           <div className="overflow-hidden rounded-xl border border-outline-variant/70 bg-surface-container-lowest">
             <canvas
               ref={canvasRef}
-              width={FIRST_LIGHT_TEMPLATE.canvas.width}
-              height={FIRST_LIGHT_TEMPLATE.canvas.height}
+              width={template.canvas.width}
+              height={template.canvas.height}
               aria-label="Rendered video preview"
               className="h-auto w-full"
             />
           </div>
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-outline">
-            Preview · {FIRST_LIGHT_TEMPLATE.name} template · 1920 × 1080
+            Preview · {template.name} template · {template.canvas.width} × {template.canvas.height}
           </p>
 
           {rendering && progress ? (
@@ -330,6 +337,45 @@ export function RenderStudio({
         </div>
 
         <div className="flex flex-col gap-4">
+          <div
+            role="radiogroup"
+            aria-label="Template"
+            className="flex flex-col gap-1.5"
+          >
+            <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-on-surface-variant">
+              Template
+            </span>
+            <div className="flex flex-col gap-2">
+              {TEMPLATE_PRESETS.map((option) => {
+                const selected = option.id === preset.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    disabled={rendering}
+                    onClick={() => setPresetId(option.id)}
+                    className={cn(
+                      "flex flex-col gap-0.5 rounded-xl border px-3 py-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-50",
+                      selected
+                        ? "border-primary/50 bg-primary/10"
+                        : "border-outline-variant bg-surface-container-lowest/60 hover:border-outline hover:bg-surface-container-high/60",
+                    )}
+                  >
+                    <span className="flex items-center gap-2 text-sm font-medium">
+                      {option.template.name}
+                      {selected ? <Icon name="check" className="h-3.5 w-3.5 text-primary" /> : null}
+                    </span>
+                    <span className="text-xs leading-5 text-on-surface-variant">
+                      {option.description}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <Field label="Track MP3" htmlFor="render-audio" hint="max 15 min">
             <Input
               id="render-audio"
