@@ -172,7 +172,7 @@ M1 should measure 3- and 10-minute stereo/mono sources, 44.1/48 kHz input, five 
 - The bundled `colr/nclx` fields are primaries 1, transfer 13, matrix 1, full-range: BT.709 primaries/matrix with sRGB transfer, not uniform BT.709 1/1/1 signaling. The probe does not configure or assert the full color contract. Decide and verify how the BT.709 requirement applies before copying the pipeline into M1.
 - The 5-second AAC track is about 77 ms longer than video, within the spec's 0.1 s tolerance. This does not prove correct offsets/trimming for real MP3 inputs.
 - Targets are VBR: the synthetic sine/static content has much lower measured bitrate. Resolve whether 256–320 kbps is a target or strict encoded-rate requirement. If strict, evaluate constant mode on actual supported encoders; do not assume support or infer quality from rate alone.
-- ffprobe/MediaInfo/VLC validation, 1/5/24 fps YouTube processing, full-length renders, five-render memory behavior, and unsupported-codec UX remain unverified.
+- ffprobe/MediaInfo/VLC validation, 1/5/24 fps YouTube processing, full-length renders, five-render memory behavior, and unsupported-codec UX remain unverified. (Later measured: VLC playback, the 3- and 10-minute renders, and five-render memory are recorded in `docs/progress.md`; 1/5/24 fps YouTube processing still needs the owner's channel.)
 
 ### Do not copy probe cleanup as production cleanup
 

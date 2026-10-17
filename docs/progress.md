@@ -1,5 +1,35 @@
 # BeatFlow review and repair progress
 
+## Session: acceptance measurements (long render, memory, VLC)
+
+Two M1 acceptance items that had been left as "needs the owner's setup" turned out to be
+measurable locally, so they were measured instead of deferred.
+
+- **10-minute render, end to end from the studio UI.** A 14.4 MB / 600 s stereo MP3 plus a
+  background photo rendered to a 29,372,995 byte MP4 in 35.8 s wall. The downloaded file is
+  `ftyp → moov → mdat` (`moov` first, so fast start survived the long in-memory build), 600.06 s
+  per `mvhd` at timescale 57,600, `avc1` + `mp4a` present, no `elst`.
+- **VLC plays it.** The freshly downloaded file was decoded by VideoToolbox (`h264`) with the
+  `faad` audio decoder. With the scene filter at normal rate the first 60 s produced exactly 60
+  unique frames (743 PNGs, 6 duplicates per source frame from the dummy vout), i.e. every 1 fps
+  frame; the whole file then played end to end at 16× in 37.7 s, exit 0. The only log noise is
+  the dummy-vout/scene filter blend warning.
+- **Five sequential renders do not grow memory.** Renderer-process RSS (summed from `ps` for the
+  instrumented profile, GC forced before each reading) went 1264, 1263, 1264, 1267, 1267 MB
+  across five 3-minute renders, with peaks of 1384, 1392, 1366, 1366, 1402 MB. Drift: +3 MB
+  settled, +18 MB peak, JS heap 5.7 → 5.9 MB. So the spec's criterion holds.
+- **Method and one honest caveat.** The first version of this check asserted total growth from
+  the idle baseline to the end of the run and failed at +376 MB. That was the wrong criterion:
+  the jump is a one-time plateau created by the first big render, and a follow-up probe (render,
+  discard, reload) showed it survives a page reload — 1315 MB after the 10-minute render, 1275 MB
+  after discard, 1267 MB after reloading the studio — so it is process-level allocator retention,
+  not application state (the JS heap stays at ~6 MB and the plateau does not move between the
+  five renders). The check now asserts render-to-render drift (< 100 MB) and reports the plateau
+  separately. Baselines vary by ±150 MB between tabs, so per-render drift, not the absolute
+  number, is what this measures.
+- Still external: uploading a rendered file to YouTube by hand at the chosen fps, the
+  deployed-origin CORS pass, and a real-device review.
+
 ## Session: preview playback (spec section 5 preview rule)
 
 - The studio preview now plays the original MP3, not just draws it: choosing a track creates
