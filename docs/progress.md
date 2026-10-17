@@ -11,8 +11,9 @@ measurable locally, so they were measured instead of deferred.
   per `mvhd` at timescale 57,600, `avc1` + `mp4a` present, no `elst`.
 - **VLC plays it.** The freshly downloaded file was decoded by VideoToolbox (`h264`) with the
   `faad` audio decoder. With the scene filter at normal rate the first 60 s produced exactly 60
-  unique frames (743 PNGs, 6 duplicates per source frame from the dummy vout), i.e. every 1 fps
-  frame; the whole file then played end to end at 16× in 37.7 s, exit 0. The only log noise is
+  unique frames in 369 PNGs (the dummy vout writes each source frame about six times), i.e. every
+  1 fps frame; a 120 s sample on the same pipeline gave 120 unique frames in 743 PNGs. The whole
+  file then played end to end at 16× in 37.7 s, exit 0. The only log noise is
   the dummy-vout/scene filter blend warning.
 - **Five sequential renders do not grow memory.** Renderer-process RSS (summed from `ps` for the
   instrumented profile, GC forced before each reading) went 1264, 1263, 1264, 1267, 1267 MB
