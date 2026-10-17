@@ -1,5 +1,33 @@
 # BeatFlow review and repair progress
 
+## Session: M1 render engine (in progress)
+
+- Built the engine under `lib/renderer/`, kept free of React imports: v1 zod template schema
+  with interpolation, asset loading/downscaling with `ImageBitmap.close()`, shared `drawScene`
+  for preview and export, pure `layoutText` shrink/wrap/ellipsis, MP3 decode to 48 kHz stereo
+  with a 15-minute cap, capability checks, and Mediabunny MP4 encoding (H.264 High
+  `avc1.640028` 1920×1080 1.8 Mbps, AAC-LC 288 kbps 48 kHz, `fastStart: "in-memory"`).
+- Added the `First Light` preset template and the render studio UI on `/generate`: MP3 + photo
+  inputs, live canvas preview through the same `drawScene`, stage progress, cancel, download,
+  and "Use for upload" hand-off into the existing upload desk. Mediabunny is loaded on demand
+  so the upload page keeps its bundle.
+- Regression tests (`tests/renderer.test.mjs`) cover schema rejection, interpolation, and the
+  three text-layout outcomes. Suite is 35/35 with lint and `tsc --noEmit` clean; production
+  build passes.
+- Real Chrome 155 (headless, production build, synthetic owner session) render checks:
+  12 s WAV + 2400 px PNG → 457 KB MP4, `ftyp/moov/mdat` order, no `elst`, avc1 1920×1080,
+  12 frames at 1 fps, AAC 48 kHz stereo, 12.07 s, rendered in 1.4 s; Chrome presented frames
+  during playback; VLC decoded all 12 frames (scene filter) and remuxed the audio track.
+- Real MP3 checks with `lame` assets: 3 min → 180.07 s file in 10.4 s, 10 min → 600.06 s file
+  in 30.8 s, 30 s mono → 30.08 s file in 1.7 s; all 1920×1080 with `moov` before `mdat`. Duration
+  is within 0.1 s of the source. Monitored 3 min renders: cancel mid-render then render again
+  works, and five sequential renders grew the JS heap by 0.1 MB after forced GC.
+- Uploader change: an unreadable PUT response now raises `UploadOutcomeUnknownError` and the
+  desk shows "Upload outcome unknown" with a Studio link. This follows the real owner upload
+  that landed on the channel while every browser PUT response was unreadable.
+- Still open for M1: uploading a *rendered* file to YouTube manually and confirming it
+  processes and plays, and the M2 work (presets, long-title/6000 px photos, template picker).
+
 ## Session: studio UI rebuild
 
 - Self-hosted Inter and JetBrains Mono as local variable fonts with their OFL notices; no Google Fonts request remains at build or runtime.

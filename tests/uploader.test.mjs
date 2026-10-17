@@ -94,10 +94,13 @@ test("rejects malformed ranges, empty files, and invalid chunk sizes", async (t)
   await assert.rejects(uploadToResumableSession({ ...options(), chunkSize: NaN }), /positive multiple/);
 });
 
-test("bounds repeated network failures without starting another upload", async (t) => {
+test("bounds repeated network failures and reports an unknown outcome", async (t) => {
   let calls = 0;
   t.mock.method(globalThis, "fetch", async () => { calls += 1; throw new TypeError("offline"); });
-  await assert.rejects(drainTimers(t, uploadToResumableSession(options())), /Retry limit reached/);
+  await assert.rejects(drainTimers(t, uploadToResumableSession(options())), {
+    name: "UploadOutcomeUnknownError",
+    message: /may already have this video/,
+  });
   assert.equal(calls, 6);
 });
 

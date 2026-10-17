@@ -13,6 +13,17 @@ registerHooks({
       if (!path) throw new Error(`Cannot resolve ${specifier}`);
       return nextResolve(pathToFileURL(path).href, context);
     }
+    // Renderer modules import each other without extensions; Node's ESM
+    // resolver needs them, TypeScript does not.
+    if (
+      (specifier.startsWith("./") || specifier.startsWith("../")) &&
+      context.parentURL &&
+      !context.parentURL.includes("/node_modules/")
+    ) {
+      const base = fileURLToPath(new URL(specifier, context.parentURL));
+      const path = [base, `${base}.ts`, `${base}.tsx`, `${base}.js`].find(existsSync);
+      if (path) return nextResolve(pathToFileURL(path).href, context);
+    }
     // Next's Node entry points also use extensionless imports internally.
     if (["next/server", "next/headers", "next/navigation"].includes(specifier)) {
       return nextResolve(`${specifier}.js`, context);

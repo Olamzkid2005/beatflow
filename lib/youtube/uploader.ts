@@ -30,6 +30,17 @@ export class UploadError extends Error {
   }
 }
 
+/**
+ * The request left the browser but no response could be read. YouTube may have
+ * stored the bytes, so this must never be presented as a plain failure.
+ */
+export class UploadOutcomeUnknownError extends UploadError {
+  constructor(message: string) {
+    super(message, 0, true);
+    this.name = "UploadOutcomeUnknownError";
+  }
+}
+
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
@@ -81,9 +92,19 @@ export async function uploadToResumableSession({
     totalBytes,
     percent: Math.round(offset / totalBytes * 100),
   });
-  const retry = async (message: string, status: number, response?: Response) => {
+  const retry = async (
+    message: string,
+    status: number,
+    response?: Response,
+    outcomeUnknown = false,
+  ) => {
     attempts += 1;
     if (attempts > MAX_RETRIES) {
+      if (outcomeUnknown) {
+        throw new UploadOutcomeUnknownError(
+          `${message} YouTube may already have this video. Check YouTube Studio before uploading again.`,
+        );
+      }
       throw new UploadError(`${message} Retry limit reached; do not create another upload without checking YouTube Studio.`, status, true);
     }
     await sleep(retryDelay(attempts, response), signal);
@@ -112,7 +133,8 @@ export async function uploadToResumableSession({
       });
     } catch {
       signal?.throwIfAborted();
-      await retry("Could not reach the YouTube upload session.", 0);
+      // The browser cannot tell a dropped request from a blocked response.
+      await retry("Could not read the YouTube upload response.", 0, undefined, true);
       queryStatus = true;
       continue;
     }

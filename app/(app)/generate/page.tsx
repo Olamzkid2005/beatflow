@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
+import { RenderStudio } from "@/components/render-studio";
 import { Icon } from "@/components/ui/icon";
 import {
   Badge,
@@ -25,6 +26,7 @@ import { useChannel } from "@/lib/use-channel";
 import {
   CHUNK_ALIGNMENT,
   DEFAULT_CHUNK_SIZE,
+  UploadOutcomeUnknownError,
   uploadToResumableSession,
   type UploadProgress,
 } from "@/lib/youtube/uploader";
@@ -120,6 +122,7 @@ function UploadStudio() {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [outcomeUnknown, setOutcomeUnknown] = useState(false);
   const [result, setResult] = useState<UploadResult | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -135,6 +138,7 @@ function UploadStudio() {
     if (abortRef.current) return;
 
     setError(null);
+    setOutcomeUnknown(false);
     setResult(null);
     setProgress(null);
 
@@ -238,6 +242,7 @@ function UploadStudio() {
           "Upload cancelled. If YouTube already accepted it, cancellation does not remove the video; check YouTube Studio before uploading again.",
         );
       } else {
+        setOutcomeUnknown(uploadError instanceof UploadOutcomeUnknownError);
         setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
       }
     } finally {
@@ -279,6 +284,8 @@ function UploadStudio() {
           </Link>
         </div>
       </header>
+
+      <RenderStudio producerName={defaults.producerName} onRenderedFile={setFile} />
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="flex min-w-0 flex-col gap-5">
@@ -475,8 +482,21 @@ function UploadStudio() {
                   <Icon name="alert" className="h-4 w-4" />
                 </span>
                 <div>
-                  <p className="text-sm font-medium text-error">Upload issue</p>
+                  <p className="text-sm font-medium text-error">
+                    {outcomeUnknown ? "Upload outcome unknown" : "Upload issue"}
+                  </p>
                   <p className="mt-1 text-sm leading-6 text-on-surface-variant">{error}</p>
+                  {outcomeUnknown ? (
+                    <a
+                      href="https://studio.youtube.com/"
+                      target="_blank"
+                      rel="noreferrer"
+                      className={buttonClass({ variant: "outline", size: "sm", className: "mt-3" })}
+                    >
+                      Check YouTube Studio
+                      <Icon name="external" className="h-3.5 w-3.5" />
+                    </a>
+                  ) : null}
                 </div>
               </div>
             </div>

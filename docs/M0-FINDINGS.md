@@ -75,6 +75,26 @@ resumable-upload requests failing CORS (`issuetracker.google.com/issues/15871868
 This cannot be settled from documentation. Test the actual deployed origin and
 server-issued session URI; do not assume that localhost or Node fetch proves CORS.
 
+**Observed on a real owner run — 17 October 2026.** The owner uploaded the bundled
+108 KB MP4 from the real app. The video **landed on the channel** (owner-confirmed),
+but the browser could not read any data-PUT response: every `fetch` to the session URI
+rejected, progress stayed at 0%, and the UI reported a retry-limit failure. So the bytes
+reach Google while the response is not browser-readable; the client cannot learn the
+video id, and an unreadable PUT must never be presented as a plain failure. The uploader
+now raises `UploadOutcomeUnknownError` and the desk shows "Upload outcome unknown" with
+a Studio link instead of claiming the upload failed.
+
+This also contradicts the local preflight probe recorded earlier in this file: an
+`OPTIONS` probe from an `http://localhost:3000` origin returned 404 without CORS headers,
+yet the real data PUT was evidently delivered. Treat preflight behaviour as unresolved
+until it is measured on the deployed origin against a server-issued session URI.
+
+**Still to measure:** whether a data PUT response is readable at all, whether the video
+id can be obtained in the browser, whether a 308 exposes `Range`, and whether the status
+PUT (`Content-Range: bytes */total`) works. If the response stays unreadable, the video
+id must be recovered another way (for example a server-side `videos.list` reconcile)
+before M2 scheduling can depend on it.
+
 **Test in M0:** confirm the data PUT and its response are browser-readable. The bundled
 108 KB file is smaller than the 8 MiB chunk size, so it alone does not exercise a 308.
 Choose the page's 256 KiB chunk option and upload a sufficiently large test video to
@@ -257,9 +277,11 @@ Before M1, record all of the following from an owner-authorized production test:
 - [ ] Nonowner denial and correct intended channel ID/name.
 - [ ] Actual Cloud Console Video Uploads quota and usage (not just the default docs).
 - [ ] Five-second MP4 video ID, UTC publishAt, initial privacy/processing state.
-- [ ] Data PUT response, nonfinal 308 exposed Range and status-query behavior using
-      the 256 KiB chunk option and a sufficiently large file; interruption resumes
-      without creating a second video.
+- [x] Data PUT delivery: the 108 KB upload reached the channel (owner-confirmed) even
+      though its response was unreadable in the browser.
+- [ ] Data PUT *response* and video id in the browser; nonfinal 308 exposed Range and
+      status-query behavior using the 256 KiB chunk option and a sufficiently large
+      file; interruption resumes without creating a second video.
 - [ ] Processing/1 fps playback result and privacy after the scheduled instant.
 - [ ] Any actual project restrictions and their remedy; explicit owner approval for M1.
 

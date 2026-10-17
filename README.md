@@ -23,12 +23,17 @@ Single user. No multi-user support. Build order and acceptance criteria live in
 **M0 — pipeline proof.** Owner-only Google sign-in, channel lookup, and a test upload
 that starts a resumable session on the server and PUTs the file from the browser. The
 studio shell now includes an upload desk, local upload history, and producer defaults
-for new uploads.
+for new uploads. A real owner upload reached the channel, but the browser could not read
+any data-PUT response, so an unknown upload outcome is reported as such instead of as a
+failure — see `docs/M0-FINDINGS.md` section 7.
 
-M1 and later are not started. See `docs/M0-FINDINGS.md` for the section 3 and section 12
-research answers and the real-project acceptance checklist. Deployed CORS, scheduled
-publication/processing, and the owner's actual quota remain unverified. M0 reliability
-repairs do not start M1 or replace that acceptance run.
+**M1 — render proof (in progress).** `lib/renderer/` turns an MP3 plus a background photo
+into a 1080p MP4 in the browser (Mediabunny + WebCodecs) with a live preview, stage
+progress, cancel, download, and a hand-off into the upload desk. One hard-coded template,
+`First Light`. Deployed CORS, the unreadable upload response, scheduled
+publication/processing, and the owner's actual quota remain unverified; uploading a
+rendered file to YouTube by hand is still to be recorded. See `docs/M0-FINDINGS.md` for
+the section 3 and section 12 research answers and the real-project acceptance checklist.
 
 ## Environment variables
 
@@ -101,7 +106,7 @@ app/
   page.tsx                Connect screen and owner access state
   (app)/
     layout.tsx            Authenticated shell + owner guard
-    generate/page.tsx     Upload desk: channel, preview, metadata, progress
+    generate/page.tsx     Render studio + upload desk: channel, metadata, progress
     history/page.tsx      Local upload history and filters
     settings/page.tsx     Local producer defaults
   api/auth/[...nextauth]/route.ts
@@ -110,8 +115,11 @@ app/
 components/
   app-shell.tsx           Header, sidebar, mobile navigation and account controls
   nav-links.tsx           Shared route navigation
+  render-studio.tsx       MP3 + photo → MP4: preview, progress, cancel, hand-off
   ui/                     Studio primitives, icons and tag input
 lib/
+  renderer/               React-free render engine (see below)
+  templates/              Preset templates, one per file
   owner.ts                single-owner identity checks
   require-owner.ts        route-handler guard
   time.ts                 timezone helpers, shared by browser and server
@@ -131,8 +139,12 @@ public/
   beatflow-m0-test-5s.mp4 5-second 1080p test video from the probe
 ```
 
-`lib/renderer/` does not exist yet; M1 adds it. It must stay free of React imports so
-the engine can be tested and reused.
+`lib/renderer/` holds the render engine and stays free of React imports so it can be
+tested and reused: `template-schema.ts` (zod v1 schema and interpolation), `assets.ts`
+(decode, downscale, fonts), `scene.ts` (`drawScene`, `layoutText`), `audio.ts` (MP3
+decode), `capabilities.ts` (encoder checks), `encode.ts` (Mediabunny MP4), `index.ts`
+(`renderVideo`, `previewFrame`). `lib/templates/` holds the presets and
+`components/render-studio.tsx` is the UI that drives them.
 
 ## Security
 
