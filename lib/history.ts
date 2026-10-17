@@ -1,50 +1,78 @@
-export type UploadHistoryEntry = {
-  videoId: string;
-  title: string;
-  channelTitle: string | null;
-  publishAt: string | null;
-  privacyStatus: string;
-  createdAt: string;
-};
+import {
+  createHistory,
+  createIndexedDbBackend,
+  createMemoryBackend,
+  LEGACY_STORAGE_KEY,
+  MAX_ENTRIES,
+  type HistoryController,
+  type UploadHistoryEntry,
+} from "./history-store";
 
-const STORAGE_KEY = "beatflow.upload-history.v1";
-const MAX_ENTRIES = 50;
+export type { UploadHistoryEntry };
+export { MAX_ENTRIES };
 
-function isEntry(value: unknown): value is UploadHistoryEntry {
-  if (!value || typeof value !== "object") return false;
-  const entry = value as Record<string, unknown>;
-  return (
-    typeof entry.videoId === "string" &&
-    typeof entry.title === "string" &&
-    (typeof entry.channelTitle === "string" || entry.channelTitle === null) &&
-    (typeof entry.publishAt === "string" || entry.publishAt === null) &&
-    typeof entry.privacyStatus === "string" &&
-    typeof entry.createdAt === "string"
-  );
+/**
+ * Browser wiring for the upload history. IndexedDB is the store (spec section
+ * 7 step 4); the localStorage entries an earlier version wrote are migrated on
+ * first use. If IndexedDB is unavailable, the session keeps an in-memory copy
+ * instead of throwing away an upload that already reached YouTube.
+ */
+let controller: HistoryController | null = null;
+
+function history(): HistoryController {
+  if (controller) return controller;
+  let backend;
+  try {
+    backend = createIndexedDbBackend();
+  } catch {
+    backend = createMemoryBackend();
+  }
+  controller = createHistory({
+    backend,
+    legacy:
+      typeof window === "undefined"
+        ? undefined
+        : {
+            read: () => {
+              try {
+                return JSON.parse(window.localStorage.getItem(LEGACY_STORAGE_KEY) ?? "null");
+              } catch {
+                return null;
+              }
+            },
+            clear: () => window.localStorage.removeItem(LEGACY_STORAGE_KEY),
+          },
+  });
+  return controller;
 }
 
-export function readHistory(): UploadHistoryEntry[] {
+function announce() {
+  window.dispatchEvent(new Event("beatflow:history"));
+}
+
+export async function readHistory(): Promise<UploadHistoryEntry[]> {
   if (typeof window === "undefined") return [];
   try {
-    const parsed: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "[]");
-    return Array.isArray(parsed) ? parsed.filter(isEntry).slice(0, MAX_ENTRIES) : [];
+    return await history().list();
   } catch {
     return [];
   }
 }
 
-export function addHistoryEntry(entry: UploadHistoryEntry) {
+export async function addHistoryEntry(entry: UploadHistoryEntry): Promise<void> {
   if (typeof window === "undefined") return;
-  const existing = readHistory().filter((item) => item.videoId !== entry.videoId);
-  const next = [entry, ...existing].slice(0, MAX_ENTRIES);
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  window.dispatchEvent(new Event("beatflow:history"));
+  try {
+    await history().add(entry);
+  } catch {
+    // History is a convenience; never turn a successful upload into an error.
+  }
+  announce();
 }
 
-export function clearHistory() {
+export async function clearHistory(): Promise<void> {
   if (typeof window === "undefined") return;
-  window.localStorage.removeItem(STORAGE_KEY);
-  window.dispatchEvent(new Event("beatflow:history"));
+  await history().clear();
+  announce();
 }
 
 export function historyStatus(entry: UploadHistoryEntry): "scheduled" | "published" | "unlisted" {

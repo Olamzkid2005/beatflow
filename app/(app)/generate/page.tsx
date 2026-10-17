@@ -35,6 +35,15 @@ type UploadResult = {
   videoId: string;
   publishAt: string | null;
   privacyStatus: string;
+  /** True when the ID came from the channel lookup, not the upload response. */
+  recovered?: boolean;
+};
+
+type UploadAttempt = {
+  title: string;
+  publishAt: string | null;
+  privacyStatus: string;
+  startedAt: string;
 };
 
 const TEST_TITLE = "BeatFlow M0 test — 5 seconds";
@@ -124,8 +133,10 @@ function UploadStudio() {
   const [error, setError] = useState<string | null>(null);
   const [outcomeUnknown, setOutcomeUnknown] = useState(false);
   const [result, setResult] = useState<UploadResult | null>(null);
+  const [recovering, setRecovering] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
+  const attemptRef = useRef<UploadAttempt | null>(null);
 
   useEffect(() => {
     return () => {
@@ -168,6 +179,13 @@ function UploadStudio() {
 
     const controller = new AbortController();
     abortRef.current = controller;
+    // Records what the outcome lookup needs if the upload response is unreadable.
+    attemptRef.current = {
+      title: title.trim(),
+      publishAt,
+      privacyStatus: publishAt ? "private" : "unlisted",
+      startedAt: new Date().toISOString(),
+    };
     setBusy(true);
 
     try {
@@ -223,18 +241,14 @@ function UploadStudio() {
       };
       setResult(completed);
 
-      try {
-        addHistoryEntry({
-          videoId,
-          title: title.trim(),
-          channelTitle: channel?.title ?? null,
-          publishAt,
-          privacyStatus: completed.privacyStatus,
-          createdAt: new Date().toISOString(),
-        });
-      } catch {
-        // History is a convenience; never turn a successful upload into an error.
-      }
+      void addHistoryEntry({
+        videoId,
+        title: title.trim(),
+        channelTitle: channel?.title ?? null,
+        publishAt,
+        privacyStatus: completed.privacyStatus,
+        createdAt: new Date().toISOString(),
+      });
     } catch (uploadError) {
       if (controller.signal.aborted) {
         setProgress(null);
@@ -248,6 +262,55 @@ function UploadStudio() {
     } finally {
       abortRef.current = null;
       setBusy(false);
+    }
+  }
+
+  /**
+   * The desk cannot read the resumable session's response, so an unknown upload
+   * outcome stays recoverable: ask the server for the newest matching upload on
+   * this channel and record that as the result. Never guesses an ID.
+   */
+  async function recoverUpload() {
+    const attempt = attemptRef.current;
+    if (!attempt || recovering) return;
+
+    setRecovering(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/youtube/latest-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(30_000),
+        body: JSON.stringify({ title: attempt.title, notBefore: attempt.startedAt }),
+      });
+      const body = await response.json().catch(() => null);
+      const videoId = body?.video?.videoId;
+      if (!response.ok || typeof videoId !== "string" || !videoId) {
+        setError(body?.error ?? `No matching upload found (${response.status}).`);
+        return;
+      }
+
+      setOutcomeUnknown(false);
+      setResult({
+        videoId,
+        publishAt: attempt.publishAt,
+        privacyStatus: attempt.privacyStatus,
+        recovered: true,
+      });
+      void addHistoryEntry({
+        videoId,
+        title: attempt.title,
+        channelTitle: channel?.title ?? null,
+        publishAt: attempt.publishAt,
+        privacyStatus: attempt.privacyStatus,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (recoverError) {
+      setError(
+        recoverError instanceof Error ? recoverError.message : "Could not look up the upload.",
+      );
+    } finally {
+      setRecovering(false);
     }
   }
 
@@ -487,15 +550,27 @@ function UploadStudio() {
                   </p>
                   <p className="mt-1 text-sm leading-6 text-on-surface-variant">{error}</p>
                   {outcomeUnknown ? (
-                    <a
-                      href="https://studio.youtube.com/"
-                      target="_blank"
-                      rel="noreferrer"
-                      className={buttonClass({ variant: "outline", size: "sm", className: "mt-3" })}
-                    >
-                      Check YouTube Studio
-                      <Icon name="external" className="h-3.5 w-3.5" />
-                    </a>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={recovering || busy}
+                        onClick={recoverUpload}
+                      >
+                        <Icon name="search" className="h-3.5 w-3.5" />
+                        {recovering ? "Looking on your channel…" : "Find it on my channel"}
+                      </Button>
+                      <a
+                        href="https://studio.youtube.com/"
+                        target="_blank"
+                        rel="noreferrer"
+                        className={buttonClass({ variant: "ghost", size: "sm" })}
+                      >
+                        Check YouTube Studio
+                        <Icon name="external" className="h-3.5 w-3.5" />
+                      </a>
+                    </div>
                   ) : null}
                 </div>
               </div>
@@ -523,6 +598,12 @@ function UploadStudio() {
                         ? `Scheduled for ${formatSchedule(result.publishAt)} · ${result.privacyStatus} until then`
                         : `Uploaded as ${result.privacyStatus}`}
                     </p>
+                    {result.recovered ? (
+                      <p className="mt-1 text-xs leading-5 text-on-surface-variant">
+                        Matched from the newest upload on this channel because the upload
+                        response was unreadable.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">

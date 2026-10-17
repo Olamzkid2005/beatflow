@@ -9,6 +9,7 @@ process.env.GOOGLE_CLIENT_SECRET = "test-secret";
 process.env.OWNER_EMAIL = "owner@example.com";
 const { GET } = await import("../app/api/youtube/channel/route.ts");
 const { POST } = await import("../app/api/youtube/init-upload/route.ts");
+const { POST: latestUpload } = await import("../app/api/youtube/latest-upload/route.ts");
 
 async function request(path, body, email = "owner@example.com") {
   const token = email && await encode({ secret: process.env.AUTH_SECRET, salt: "authjs.session-token", token: { email, accessToken: "fake", expiresAt: Math.floor(Date.now() / 1000) + 3600 } });
@@ -42,6 +43,78 @@ test("channel network failure is a structured 502", async (t) => {
   const response = await GET(await request("/api/youtube/channel"), {});
   assert.equal(response.status, 502);
   assert.match((await response.json()).error, /YouTube/);
+});
+
+test("outcome lookup follows the uploads playlist and never uses search.list", async (t) => {
+  const urls = [];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    urls.push(String(url));
+    if (String(url).includes("/channels")) {
+      return Response.json({ items: [{ contentDetails: { relatedPlaylists: { uploads: "UU-owner" } } }] });
+    }
+    return Response.json({
+      items: [
+        { snippet: { title: "Older release", publishedAt: "2026-10-01T10:00:00Z", resourceId: { videoId: "old-video" } } },
+        {
+          snippet: {
+            title: "Midnight  Loop",
+            publishedAt: new Date(Date.now() - 30_000).toISOString(),
+            resourceId: { videoId: "recovered-video" },
+          },
+        },
+      ],
+    });
+  });
+
+  const response = await latestUpload(
+    await request("/api/youtube/latest-upload", {
+      title: "midnight loop",
+      notBefore: new Date(Date.now() - 60_000).toISOString(),
+    }),
+    {},
+  );
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).video.videoId, "recovered-video");
+  assert.equal(urls.length, 2, urls.join("\n"));
+  assert(urls[0].includes("part=contentDetails"));
+  assert(urls[1].includes("playlistItems") && urls[1].includes("playlistId=UU-owner"));
+  assert(!urls.some((url) => url.includes("search")));
+});
+
+test("outcome lookup refuses to guess and guards its input", async (t) => {
+  t.mock.method(globalThis, "fetch", async (url) => {
+    if (String(url).includes("/channels")) {
+      return Response.json({ items: [{ contentDetails: { relatedPlaylists: { uploads: "UU-owner" } } }] });
+    }
+    return Response.json({
+      items: [
+        { snippet: { title: "Something else", publishedAt: new Date().toISOString(), resourceId: { videoId: "other-video" } } },
+        { snippet: { title: "Midnight", publishedAt: "2020-01-01T00:00:00Z", resourceId: { videoId: "ancient-video" } } },
+      ],
+    });
+  });
+
+  const miss = await latestUpload(
+    await request("/api/youtube/latest-upload", {
+      title: "Midnight",
+      notBefore: new Date(Date.now() - 60_000).toISOString(),
+    }),
+    {},
+  );
+  assert.equal(miss.status, 404);
+  assert.match((await miss.json()).error, /matches that title/);
+
+  const invalid = await latestUpload(
+    await request("/api/youtube/latest-upload", { title: "Midnight", notBefore: "yesterday" }),
+    {},
+  );
+  assert.equal(invalid.status, 400);
+
+  const unauthorized = await latestUpload(
+    await request("/api/youtube/latest-upload", { title: "Midnight", notBefore: new Date().toISOString() }, "other@example.com"),
+    {},
+  );
+  assert.equal(unauthorized.status, 403);
 });
 
 test("upload initialization sends only metadata/size and persists auth cookies", async (t) => {

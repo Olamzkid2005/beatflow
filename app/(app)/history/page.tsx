@@ -50,20 +50,30 @@ export default function HistoryPage() {
   const [filter, setFilter] = useState<Filter>("all");
 
   useEffect(() => {
-    const refresh = () => setEntries(readHistory());
+    let active = true;
+    const refresh = () => {
+      readHistory()
+        .then((next) => {
+          if (active) setEntries(next);
+        })
+        .catch(() => {
+          if (active) setEntries([]);
+        });
+    };
     refresh();
     window.addEventListener("beatflow:history", refresh);
     window.addEventListener("storage", refresh);
     return () => {
+      active = false;
       window.removeEventListener("beatflow:history", refresh);
       window.removeEventListener("storage", refresh);
     };
   }, []);
 
-  function handleClear() {
+  async function handleClear() {
     if (!window.confirm("Clear all upload history from this browser?")) return;
-    clearHistory();
     setEntries([]);
+    await clearHistory();
   }
 
   const filtered = (entries ?? []).filter((entry) => {
@@ -233,7 +243,7 @@ export default function HistoryPage() {
 
       <p className="flex items-center gap-2 border-t border-surface-container-highest pt-4 font-mono text-[10px] uppercase tracking-[0.12em] text-outline">
         <Icon name="info" className="h-3.5 w-3.5" />
-        Stored in this browser · Up to 50 entries
+        Stored in IndexedDB in this browser · Up to 50 entries
       </p>
     </div>
   );

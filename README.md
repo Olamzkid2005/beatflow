@@ -35,6 +35,16 @@ quota remain unverified; uploading a rendered file to YouTube by hand is still t
 recorded. See `docs/M0-FINDINGS.md` for the section 3 and section 12 research answers and
 the real-project acceptance checklist.
 
+**M3 — metadata and publishing (in progress).** The per-upload form, timezone-aware
+scheduling, and the chunked direct upload are in place, and the result is now recorded in
+IndexedDB (`lib/history.ts` over `lib/history-store.ts`, migrating the earlier
+localStorage rows) with up to 50 entries per browser. Because the browser still cannot
+read a resumable session's response, an unknown upload outcome is recoverable: the desk
+asks `POST /api/youtube/latest-upload`, which looks at the channel's uploads playlist
+(`channels.list` + `playlistItems.list`, 2 quota units, never `search.list`) and matches
+the newest upload with the same title inside a short window. It never guesses an ID, and a
+miss leaves the outcome unknown. Still open: a real run against the owner's channel.
+
 **M2 — template engine (in progress).** Templates are data, validated by zod v1 before
 anything renders: `First Light` (lower third), `Pulse` (centred title) and `Grid`
 (editorial split) ship in `lib/templates/`, and the studio's picker switches the live
@@ -120,6 +130,7 @@ app/
   api/auth/[...nextauth]/route.ts
   api/youtube/channel/route.ts       channel name and avatar
   api/youtube/init-upload/route.ts   starts the resumable session
+  api/youtube/latest-upload/route.ts recovers the video id from the uploads playlist
 components/
   app-shell.tsx           Header, sidebar, mobile navigation and account controls
   nav-links.tsx           Shared route navigation
@@ -131,11 +142,13 @@ lib/
   owner.ts                single-owner identity checks
   require-owner.ts        route-handler guard
   time.ts                 timezone helpers, shared by browser and server
-  history.ts              browser-local upload history
+  history.ts              upload history wiring (IndexedDB, migration, events)
+  history-store.ts        history controller, IndexedDB adapter, memory fallback
   settings.ts             browser-local producer defaults
   use-channel.ts          client channel fetch hook
   youtube/api.ts          YouTube fetch helpers
   youtube/metadata.ts     field validation (zod) and the videos.insert body
+  youtube/reconcile.ts    pure matcher for recovering a video id (tested in Node)
   youtube/uploader.ts     browser-side chunked resumable upload
 types/next-auth.d.ts      session and JWT augmentation
 tools/m0-probe/           Chrome capability probe (test-only, not part of the app)

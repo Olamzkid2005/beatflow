@@ -91,9 +91,17 @@ until it is measured on the deployed origin against a server-issued session URI.
 
 **Still to measure:** whether a data PUT response is readable at all, whether the video
 id can be obtained in the browser, whether a 308 exposes `Range`, and whether the status
-PUT (`Content-Range: bytes */total`) works. If the response stays unreadable, the video
-id must be recovered another way (for example a server-side `videos.list` reconcile)
-before M2 scheduling can depend on it.
+PUT (`Content-Range: bytes */total`) works.
+
+**Recovery path implemented — M3.** `POST /api/youtube/latest-upload` no longer depends on
+the upload response: it reads the channel's uploads playlist (`channels.list` with
+`contentDetails`, then `playlistItems.list`, 2 quota units) and matches the newest upload
+with the same title within two minutes of the attempt. The desk offers it after an unknown
+outcome, records the entry in IndexedDB, and never guesses an id — a miss stays unknown.
+Unverified against the real channel: whether a **private, scheduled** upload appears in the
+own uploads playlist through the API, and how quickly after the PUT it appears. If private
+scheduled videos do not show up there, the lookup needs `videos.list` over the known ids or
+the upload must stay unlisted until the reconciliation runs.
 
 **Test in M0:** confirm the data PUT and its response are browser-readable. The bundled
 108 KB file is smaller than the 8 MiB chunk size, so it alone does not exercise a 308.

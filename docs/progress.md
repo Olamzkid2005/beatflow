@@ -1,5 +1,37 @@
 # BeatFlow review and repair progress
 
+## Session: M3 metadata and publishing (in progress)
+
+- Upload history moved from localStorage to IndexedDB as the spec asks, behind a pure
+  controller with an injectable backend (`lib/history-store.ts`): validation, newest-first
+  ordering, dedupe and replacement by video ID, a 50-entry cap, and a one-time migration of
+  the previous localStorage rows. The old key is cleared after migrating, and the store is
+  trimmed to the cap rather than the read being capped.
+- The first version of that trim was wrong and the new test caught it: trimming the already
+  capped list is a no-op, so the store grew past 50 rows while reads looked correct. Fixed by
+  trimming the uncapped, sorted store.
+- Because the browser still cannot read a resumable session's response, M3 adds a way back:
+  `POST /api/youtube/latest-upload` resolves the channel's uploads playlist
+  (`channels.list` with `contentDetails`, then `playlistItems.list`) and matches the newest
+  upload with the same title at or after the attempt started, allowing two minutes of clock
+  slack. Two quota units, no `search.list`, and a pure matcher (`lib/youtube/reconcile.ts`) so
+  the rules are unit tested. A miss keeps the outcome unknown instead of guessing an ID.
+- The upload desk shows "Upload outcome unknown" with a "Find it on my channel" action. A
+  match becomes the normal success card (marked as matched from the channel) and writes the
+  history entry, so a real upload that YouTube accepted can no longer vanish from the record.
+- Tests: 46/46 with lint, `tsc --noEmit` and a production build clean. New coverage: history
+  validation/cap/migration, the release-state helper, defensive channel-upload parsing, the
+  matcher window, and the route (owner guard, 400 on bad input, playlist-only lookup with no
+  `search` call, 404 when nothing matches).
+- Real Chrome 155 run (headless, production build, mocked YouTube boundary): an upload whose
+  response cannot be read shows the unknown panel after exactly one init call, the lookup
+  recovers `recovered-video` and says where the id came from, a readable upload records
+  `direct-video`, and the history page then lists all three rows (migration + both uploads)
+  with the localStorage key gone, the rows present in the `beatflow` IndexedDB store, and the
+  list surviving a reload.
+- Still open for M3: a real run against the owner's channel (quota units, whether a private
+  scheduled upload appears in the uploads playlist, and how long YouTube takes to expose it).
+
 ## Session: M2 template engine (in progress)
 
 - Added two presets beside `First Light`: `Pulse` (centred title on a full scrim, warm accent,
