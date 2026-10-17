@@ -5,7 +5,7 @@ a 1080p MP4 comes out, rendered in the browser, and the file uploads straight fr
 browser to YouTube on a schedule.
 
 Single user. No multi-user support. Build order and acceptance criteria live in
-`BeatFlow — Build Spec for the Coding Agent.md`.
+`docs/BeatFlow — Build Spec for the Coding Agent.md`.
 
 ## Stack
 
@@ -25,7 +25,7 @@ that starts a resumable session on the server and PUTs the file from the browser
 studio shell now includes an upload desk, local upload history, and producer defaults
 for new uploads.
 
-M1 and later are not started. See `M0-FINDINGS.md` for the section 3 and section 12
+M1 and later are not started. See `docs/M0-FINDINGS.md` for the section 3 and section 12
 research answers and the real-project acceptance checklist. Deployed CORS, scheduled
 publication/processing, and the owner's actual quota remain unverified. M0 reliability
 repairs do not start M1 or replace that acceptance run.
