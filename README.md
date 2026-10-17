@@ -45,6 +45,12 @@ asks `POST /api/youtube/latest-upload`, which looks at the channel's uploads pla
 the newest upload with the same title inside a short window. It never guesses an ID, and a
 miss leaves the outcome unknown. Still open: a real run against the owner's channel.
 
+**M4 — polish (in progress).** Producer defaults live in `/settings` and seed the next
+upload. A finished render is only released when the user agrees — replacing or discarding
+it asks first — and the tab warns before closing or reloading while a render or upload is
+running. An unreadable photo blocks the render with a clear message instead of failing
+later. Still to review on a real device.
+
 **M2 — template engine (in progress).** Templates are data, validated by zod v1 before
 anything renders: `First Light` (lower third), `Pulse` (centred title) and `Grid`
 (editorial split) ship in `lib/templates/`, and the studio's picker switches the live
@@ -144,7 +150,8 @@ lib/
   time.ts                 timezone helpers, shared by browser and server
   history.ts              upload history wiring (IndexedDB, migration, events)
   history-store.ts        history controller, IndexedDB adapter, memory fallback
-  settings.ts             browser-local producer defaults
+  settings.ts             browser-local producer defaults (storage injectable)
+  use-before-unload.ts    unload guard for running renders and uploads
   use-channel.ts          client channel fetch hook
   youtube/api.ts          YouTube fetch helpers
   youtube/metadata.ts     field validation (zod) and the videos.insert body

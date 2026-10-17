@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/primitives";
 import type { RenderCapabilities, RenderProgress } from "@/lib/renderer";
 import { DEFAULT_TEMPLATE_ID, TEMPLATE_PRESETS } from "@/lib/templates";
+import { useBeforeUnloadWarning } from "@/lib/use-before-unload";
 
 type Phase = "idle" | "rendering" | "done" | "cancelled" | "error";
 
@@ -74,6 +75,7 @@ export function RenderStudio({
   const [progress, setProgress] = useState<RenderProgress | null>(null);
   const [result, setResult] = useState<RenderResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
   const [capabilities, setCapabilities] = useState<RenderCapabilities | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -148,11 +150,15 @@ export function RenderStudio({
         }
         bitmapRef.current?.bitmap.close();
         bitmapRef.current = { file: imageFile, bitmap };
+        setImageError(null);
         await drawPreviewRef.current();
       })
       .catch((reason) => {
         if (!cancelled) {
-          setError(reason instanceof Error ? reason.message : "Could not load the background image.");
+          // A photo that cannot be decoded must block the render, not fail it later.
+          setImageError(
+            reason instanceof Error ? reason.message : "Could not read that image. Try a PNG or JPEG.",
+          );
         }
       });
     return () => {
@@ -173,12 +179,27 @@ export function RenderStudio({
     [],
   );
 
+  /** Releases the rendered MP4 without touching anything the user downloaded. */
+  function handleDiscard() {
+    if (!window.confirm("Discard this render? The file is released from memory; a downloaded copy is untouched.")) {
+      return;
+    }
+    if (resultUrlRef.current) URL.revokeObjectURL(resultUrlRef.current);
+    resultUrlRef.current = null;
+    resultBlobRef.current = null;
+    setResult(null);
+    setPhase("idle");
+  }
+
   async function handleRender() {
     if (!audioFile || !imageFile || phase === "rendering") return;
     if (capabilities && !capabilities.supported) {
       setError(capabilities.reasons.join(" "));
       return;
     }
+    if (imageError) return;
+    // Hold on to a finished render until the user agrees to replace it.
+    if (result && !window.confirm("Start a new render and release the current MP4?")) return;
 
     // A new render releases the previous Blob and URL (spec section 5 cleanup).
     if (resultUrlRef.current) URL.revokeObjectURL(resultUrlRef.current);
@@ -241,6 +262,7 @@ export function RenderStudio({
 
   const rendering = phase === "rendering";
   const unsupported = capabilities !== null && !capabilities.supported;
+  useBeforeUnloadWarning(rendering);
 
   return (
     <Card className="p-5 sm:p-6">
@@ -298,6 +320,10 @@ export function RenderStudio({
             <div role="alert" className="rounded-xl border border-error/25 bg-error-container/15 p-4">
               <p className="text-sm font-medium text-error">Render issue</p>
               <p className="mt-1 text-xs leading-5 text-on-surface-variant">{error}</p>
+              <p className="mt-1 text-xs leading-5 text-outline">
+                Rendering uploads nothing and changes no files, so it is always safe to try
+                again with different inputs.
+              </p>
             </div>
           ) : null}
 
@@ -327,6 +353,10 @@ export function RenderStudio({
                 <Button size="sm" onClick={handleUseForUpload}>
                   <Icon name="upload" className="h-3.5 w-3.5" />
                   Use for upload
+                </Button>
+                <Button variant="ghost" size="sm" onClick={handleDiscard}>
+                  <Icon name="trash" className="h-3.5 w-3.5" />
+                  Discard
                 </Button>
                 <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-outline">
                   {result.name} · {formatBytes(result.bytes)}
@@ -396,9 +426,18 @@ export function RenderStudio({
               type="file"
               accept="image/*"
               disabled={rendering}
-              onChange={(event) => setImageFile(event.target.files?.[0] ?? null)}
+              onChange={(event) => {
+                setImageError(null);
+                setImageFile(event.target.files?.[0] ?? null);
+              }}
             />
           </Field>
+
+          {imageError ? (
+            <p role="alert" className="rounded-lg border border-error/25 bg-error-container/15 px-3 py-2 text-xs leading-5 text-error">
+              {imageError} Choose a different image to unlock rendering.
+            </p>
+          ) : null}
 
           <Field label="Track name" htmlFor="render-track-name" hint="shown in the video">
             <Input
@@ -413,7 +452,7 @@ export function RenderStudio({
           <div className="flex flex-wrap items-center gap-2">
             <Button
               onClick={handleRender}
-              disabled={!audioFile || !imageFile || rendering || unsupported}
+              disabled={!audioFile || !imageFile || rendering || unsupported || Boolean(imageError)}
             >
               <Icon name="spark" className="h-4 w-4" />
               {rendering ? "Rendering…" : "Render MP4"}

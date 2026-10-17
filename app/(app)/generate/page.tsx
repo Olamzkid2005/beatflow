@@ -21,6 +21,7 @@ import {
 import { TagInput } from "@/components/ui/tag-input";
 import { addHistoryEntry } from "@/lib/history";
 import { readSettings } from "@/lib/settings";
+import { useBeforeUnloadWarning } from "@/lib/use-before-unload";
 import { browserTimeZone, toDateTimeLocalValue, toUtcIso8601 } from "@/lib/time";
 import { useChannel } from "@/lib/use-channel";
 import {
@@ -143,6 +144,9 @@ function UploadStudio() {
       abortRef.current?.abort();
     };
   }, []);
+
+  // The tab must stay open until YouTube has the file (spec section 7).
+  useBeforeUnloadWarning(busy);
 
   async function startUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

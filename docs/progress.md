@@ -1,5 +1,27 @@
 # BeatFlow review and repair progress
 
+## Session: M4 polish (in progress)
+
+- Discard confirmation: a finished render survives a refused replacement or discard, and the
+  studio asks before releasing the previous MP4 (at most one render is ever held in memory).
+- `lib/use-before-unload.ts` guards closing or reloading the tab while a render or an upload is
+  running, and releases the guard as soon as the work stops or is cancelled.
+- Failure state: a photo that cannot be decoded now blocks the render with a visible message
+  and a disabled button instead of failing later inside the encoder. Render errors also state
+  that rendering uploads nothing and changes no files.
+- `lib/settings.ts` takes an optional storage, so the producer defaults (name, timezone,
+  default tags, description template) are covered by tests in Node: missing or corrupt JSON,
+  field-by-field validation, write/reset, defaults never shared between reads, and blocked
+  storage raising so the form can report it.
+- Tests 51/51 with lint, `tsc --noEmit` and a production build clean.
+- Real Chrome 155 run (headless, production build, YouTube boundary mocked for the upload
+  half): the discard gate keeps the same object URL when refused and produces a new one when
+  accepted (the confirm text is asserted), the discard action removes the video element once
+  confirmed, the unload guard reads armed only while a render or upload runs and releases on
+  cancel, and an unreadable PNG disables Render until a decodable image is chosen.
+- Still open for M4: reviewing the settings screen on a real device, and the deployed-origin
+  pass that M0/M3 also wait on.
+
 ## Session: M3 metadata and publishing (in progress)
 
 - Upload history moved from localStorage to IndexedDB as the spec asks, behind a pure
