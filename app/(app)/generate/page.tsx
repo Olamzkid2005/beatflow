@@ -270,7 +270,7 @@ function UploadStudio() {
 
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={channelTone}>
-            <StatusDot tone={channelError ? "danger" : channel ? "primary" : "muted"} />
+            <StatusDot tone={channelError ? "danger" : channel ? "success" : "muted"} />
             {channelLoading ? "Checking channel" : channelError ? "Channel offline" : channel ? "Channel connected" : "No channel"}
           </Badge>
           <Link href="/history" className={buttonClass({ variant: "outline", size: "sm" })}>

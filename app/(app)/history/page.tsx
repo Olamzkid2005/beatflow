@@ -42,7 +42,7 @@ function statusTone(status: ReturnType<typeof historyStatus>) {
 }
 
 function statusDot(status: ReturnType<typeof historyStatus>) {
-  return status === "scheduled" ? "tertiary" : status === "published" ? "primary" : "muted";
+  return status === "scheduled" ? "tertiary" : status === "published" ? "success" : "muted";
 }
 
 export default function HistoryPage() {

@@ -42,7 +42,7 @@ export function AppShell({ user, children }: { user: AppShellUser; children: Rea
 
           <div className="flex shrink-0 items-center gap-2">
             <span className="hidden items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-1.5 font-mono text-[10px] text-on-surface-variant lg:flex">
-              <StatusDot />
+              <StatusDot tone="success" />
               <span className="text-on-surface">Owner</span>
               <span className="text-outline">·</span>
               <span>Connected</span>

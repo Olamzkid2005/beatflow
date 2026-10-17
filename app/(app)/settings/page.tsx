@@ -135,7 +135,7 @@ function SettingsForm() {
           </p>
         </div>
         <Badge tone={saved ? "success" : "neutral"}>
-          <StatusDot tone={saved ? "primary" : "muted"} />
+          <StatusDot tone={saved ? "success" : "muted"} />
           {saved ? "Saved locally" : "Local settings"}
         </Badge>
       </header>

@@ -224,10 +224,11 @@ export function Toggle({
   );
 }
 
-export function StatusDot({ tone = "primary" }: { tone?: "primary" | "tertiary" | "muted" | "danger" }) {
+export function StatusDot({ tone = "primary" }: { tone?: "primary" | "tertiary" | "success" | "muted" | "danger" }) {
   const colors = {
     primary: "bg-primary",
     tertiary: "bg-tertiary",
+    success: "bg-emerald-400",
     muted: "bg-outline",
     danger: "bg-error",
   };

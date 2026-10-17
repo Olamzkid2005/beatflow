@@ -49,7 +49,7 @@ export default async function Home() {
             tone={owner ? (expired ? "danger" : "success") : "neutral"}
             className="hidden sm:inline-flex"
           >
-            <StatusDot tone={owner ? (expired ? "danger" : "primary") : "muted"} />
+            <StatusDot tone={owner ? (expired ? "danger" : "success") : "muted"} />
             {owner ? (expired ? "Reconnect needed" : "Studio online") : "Private studio"}
           </Badge>
           {owner && !expired ? (
@@ -188,7 +188,7 @@ export default async function Home() {
                       {session?.user?.email}
                     </p>
                   </div>
-                  <StatusDot />
+                  <StatusDot tone={expired ? "danger" : "success"} />
                 </div>
 
                 {expired ? (
@@ -250,7 +250,7 @@ export default async function Home() {
                 Pipeline
               </p>
               <Badge tone="success">
-                <StatusDot />
+                <StatusDot tone="success" />
                 Ready
               </Badge>
             </div>
