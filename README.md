@@ -28,12 +28,12 @@ any data-PUT response, so an unknown upload outcome is reported as such instead 
 failure — see `docs/M0-FINDINGS.md` section 7.
 
 **M1 — render proof (in progress).** `lib/renderer/` turns an MP3 plus a background photo
-into a 1080p MP4 in the browser (Mediabunny + WebCodecs) with a live preview, stage
-progress, cancel, download, and a hand-off into the upload desk. Deployed CORS, the
-unreadable upload response, scheduled publication/processing, and the owner's actual
-quota remain unverified; uploading a rendered file to YouTube by hand is still to be
-recorded. See `docs/M0-FINDINGS.md` for the section 3 and section 12 research answers and
-the real-project acceptance checklist.
+into a 1080p MP4 in the browser (Mediabunny + WebCodecs) with a live preview that plays the
+original MP3 alongside the canvas, stage progress, cancel, download, and a hand-off into
+the upload desk. Deployed CORS, the unreadable upload response, scheduled
+publication/processing, and the owner's actual quota remain unverified; uploading a
+rendered file to YouTube by hand is still to be recorded. See `docs/M0-FINDINGS.md` for the
+section 3 and section 12 research answers and the real-project acceptance checklist.
 
 **M3 — metadata and publishing (in progress).** The per-upload form, timezone-aware
 scheduling, and the chunked direct upload are in place, and the result is now recorded in

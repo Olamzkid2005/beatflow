@@ -1,5 +1,20 @@
 # BeatFlow review and repair progress
 
+## Session: preview playback (spec section 5 preview rule)
+
+- The studio preview now plays the original MP3, not just draws it: choosing a track creates
+  an object URL, shows a native audio element with the file name, and the canvas keeps
+  redrawing through the same `drawScene` the export uses. Nothing is encoded for the preview.
+- The URL is created by the file handler (not in an effect), revoked when the track is
+  replaced, and revoked again when the studio unmounts, so no preview URL outlives its file.
+- Tests 51/51, `eslint`, `tsc --noEmit` and a production build clean.
+- Real Chrome 155 (headless, production build, synthetic owner session): a 30 s mono MP3
+  shows a controlled audio element sourced from `blob:` with the file named in the caption,
+  the URL serves its 721,152 bytes, playback advances (`currentTime` 0.86 s, not paused) while
+  the canvas still draws, replacing it with a 3-minute track revokes the first URL and serves
+  the new one (4,321,152 bytes) in a single element, and navigating to `/history` revokes the
+  live URL on unmount. Console empty.
+
 ## Session: M4 polish (in progress)
 
 - Discard confirmation: a finished render survives a refused replacement or discard, and the

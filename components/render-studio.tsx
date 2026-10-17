@@ -74,12 +74,14 @@ export function RenderStudio({
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState<RenderProgress | null>(null);
   const [result, setResult] = useState<RenderResult | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const [capabilities, setCapabilities] = useState<RenderCapabilities | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
   const bitmapRef = useRef<{ file: File; bitmap: ImageBitmap } | null>(null);
   const resultUrlRef = useRef<string | null>(null);
   const resultBlobRef = useRef<Blob | null>(null);
@@ -132,6 +134,17 @@ export function RenderStudio({
     drawPreviewRef.current().catch(() => {});
   }, [template, trackName, producerName, audioFile]);
 
+  // The preview pairs the canvas with the original MP3 (spec section 5). The
+  // object URL is created when the file is chosen, replaced when it changes,
+  // and revoked on unmount, so no preview URL outlives its file.
+  function selectAudioFile(file: File | null) {
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    audioUrlRef.current = file ? URL.createObjectURL(file) : null;
+    setAudioUrl(audioUrlRef.current);
+    setAudioFile(file);
+    if (file) setTrackName((current) => current || trackNameFromFileName(file.name));
+  }
+
   // Decode the background once per file and reuse it (memory rule in section 5).
   useEffect(() => {
     if (!imageFile) {
@@ -175,6 +188,8 @@ export function RenderStudio({
       resultBlobRef.current = null;
       if (resultUrlRef.current) URL.revokeObjectURL(resultUrlRef.current);
       resultUrlRef.current = null;
+      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
     },
     [],
   );
@@ -300,6 +315,22 @@ export function RenderStudio({
             Preview · {template.name} template · {template.canvas.width} × {template.canvas.height}
           </p>
 
+          {audioUrl ? (
+            <div className="flex flex-col gap-1.5 rounded-xl border border-outline-variant/70 bg-surface-container-lowest/70 px-3 py-2.5">
+              <audio
+                key={audioUrl}
+                src={audioUrl}
+                controls
+                preload="metadata"
+                aria-label={`Preview source audio: ${audioFile?.name ?? "track"}`}
+                className="w-full"
+              />
+              <p className="truncate font-mono text-[10px] uppercase tracking-[0.14em] text-outline">
+                Source audio · {audioFile?.name ?? "track"}
+              </p>
+            </div>
+          ) : null}
+
           {rendering && progress ? (
             <div className="rounded-xl border border-outline-variant/70 bg-surface-container-lowest/70 p-4">
               <div className="flex items-center justify-between gap-3">
@@ -413,9 +444,7 @@ export function RenderStudio({
               accept=".mp3,audio/mpeg"
               disabled={rendering}
               onChange={(event) => {
-                const file = event.target.files?.[0] ?? null;
-                setAudioFile(file);
-                if (file) setTrackName((current) => current || trackNameFromFileName(file.name));
+                selectAudioFile(event.target.files?.[0] ?? null);
               }}
             />
           </Field>
