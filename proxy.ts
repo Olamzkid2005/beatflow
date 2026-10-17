@@ -5,9 +5,8 @@ import authConfig from "@/auth.config";
 const { auth } = NextAuth(authConfig);
 
 /**
- * Next 16 replaced `middleware.ts` with `proxy.ts`. This loads `auth.config.ts`
- * only, so nothing Node.js-specific runs on the Edge runtime. The `authorized`
- * callback rejects any account that is not the owner.
+ * Next 16 proxy runs in Node. This intentionally uses only optimistic identity
+ * checks: route wrappers refresh credentials and independently enforce ownership.
  */
 export const proxy = auth;
 

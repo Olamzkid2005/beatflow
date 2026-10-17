@@ -10,7 +10,7 @@ export const MAX_TITLE_LENGTH = 100;
 export const MAX_DESCRIPTION_BYTES = 5_000;
 export const MAX_TAGS_CHARACTERS = 500;
 
-/** YouTube rejects `<` and `>` in titles. */
+/** YouTube rejects `<` and `>` in titles and descriptions. */
 const ANGLE_BRACKETS = /[<>]/;
 
 /** Strict UTC ISO 8601, e.g. `2026-10-20T17:00:00Z`. */
@@ -26,8 +26,8 @@ export const videoMetadataSchema = z
       .min(1, "Title is required.")
       .max(MAX_TITLE_LENGTH, `Title must be at most ${MAX_TITLE_LENGTH} characters.`)
       .refine((value) => !ANGLE_BRACKETS.test(value), "Title cannot contain < or >."),
-    description: z.string().default(""),
-    tags: z.array(z.string()).default([]),
+    description: z.string().refine((value) => !ANGLE_BRACKETS.test(value), "Description cannot contain < or >.").default(""),
+    tags: z.array(z.string().trim().min(1, "Tags cannot be empty.")).default([]),
     privacyStatus: z.enum(["public", "unlisted", "private"]),
     /** Required when `privacyStatus` is `private` and you want a schedule. */
     publishAt: z.string().nullish(),
@@ -43,7 +43,9 @@ export const videoMetadataSchema = z
       });
     }
 
-    const tagCharacters = value.tags.reduce((total, tag) => total + tag.length, 0);
+    // YouTube counts list commas and implicit quotes around tags with spaces.
+    const tagCharacters = value.tags.reduce((total, tag) => total + tag.length + (tag.includes(" ") ? 2 : 0), 0)
+      + Math.max(0, value.tags.length - 1);
     if (tagCharacters > MAX_TAGS_CHARACTERS) {
       ctx.addIssue({
         code: "custom",
@@ -52,14 +54,14 @@ export const videoMetadataSchema = z
       });
     }
 
-    if (value.publishAt) {
+    if (value.publishAt != null) {
       if (!UTC_ISO_8601.test(value.publishAt)) {
         ctx.addIssue({
           code: "custom",
           path: ["publishAt"],
           message: "publishAt must be UTC ISO 8601, for example 2026-10-20T17:00:00Z.",
         });
-      } else if (Number.isNaN(Date.parse(value.publishAt))) {
+      } else if (!Number.isFinite(Date.parse(value.publishAt)) || new Date(value.publishAt).toISOString().replace(".000Z", "Z") !== value.publishAt) {
         ctx.addIssue({
           code: "custom",
           path: ["publishAt"],

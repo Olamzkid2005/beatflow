@@ -1,35 +1,28 @@
 # BeatFlow — M0 findings
 
 Answers to section 3 (risks to settle first) and section 12 (unverified assumptions).
-Checked 12 October 2026. Anything marked **open** still needs a real run against the
-owner's Google Cloud project or a deployed origin.
+Research refreshed 17 October 2026; historical media measurements below are from
+13 October. Anything marked **open** still needs a real run against the owner's
+Google Cloud project or deployed origin. M0 is not complete until those results
+are recorded and the owner approves the next milestone.
 
 ## Section 3 — risks
 
-### 1. Audit lock — **confirmed, and it is the biggest risk**
+### 1. Scheduled publication — **project behavior remains open**
 
-All videos uploaded through `videos.insert` from a Google Cloud project created
-after **28 July 2020** are restricted to private until the project passes an API
-compliance audit.
+The current official `videos.insert` reference explicitly states:
 
-YouTube Help is explicit that this lock is not appealable:
+> Videos uploaded from unverified API projects are not restricted to private viewing mode.
 
-> For videos that have been locked as private due to upload via an unverified API
-> service, you will not be able to appeal. You'll need to re-upload the video via a
-> verified API service or via the YouTube app/site. The unverified API service can
-> also apply for an API audit.
+This supersedes this document's earlier claim that a post-July-2020 project
+necessarily locks API uploads private. Do not apply for an audit solely because of
+that historical assumption. Other creator/project restrictions may still apply.
 
-The same page says a locked video's state cannot be changed until it is re-reviewed.
-That is the worrying part for a scheduled upload: if the lock is applied, YouTube may
-never honour `publishAt`.
+**Still open:** whether the owner's real `private` + `publishAt` upload processes
+and goes public on schedule. Record actual privacy/processing state and observed
+publication time. Investigate any restriction actually returned by YouTube.
 
-**Still open:** whether `private` + `publishAt` actually fires on schedule before the
-audit. This is exactly what M0's 5-second test measures. If the schedule does not
-fire, the audit has to be applied for before M1 is worth building.
-
-Sources:
-- https://support.google.com/youtube/answer/7300965
-- https://developers.google.com/youtube/v3/revision_history
+Source: https://developers.google.com/youtube/data/reference/rest/v3/videos/insert
 
 ### 2. Quota — **the spec's 1,600-unit figure is out of date**
 
@@ -42,10 +35,10 @@ The current quota page states:
 > The `search.list` and `videos.insert` methods have their own quota buckets. Each of
 > these methods has a default daily limit of 100 per day. The quota cost is 1 per call.
 
-So `videos.insert` is **100 uploads a day in its own bucket**, not ~6 a day. Note the
-cost table still lists 1,600 next to `videos.insert` in a table row while the page's own
-summary contradicts it; the bucket sentence is the authoritative one. Quotas reset at
-midnight Pacific Time and are shared per project, not per API key.
+The documented default is **100 upload calls per day in its own bucket**, not ~6.
+The current quota table and insert reference agree: 1 unit per call in the Video
+Uploads bucket. The earlier table contradiction is no longer present. Quotas reset
+at midnight Pacific Time and are shared per project, not per API key.
 
 **Still open:** the real number shown on the Quotas page in the owner's Google Cloud
 console. Record it there.
@@ -79,12 +72,16 @@ Avoided by design. The MP4 is PUT from the browser straight to Google's session 
 
 Public sources conflict, and there is a long-standing Google issue tracker entry about
 resumable-upload requests failing CORS (`issuetracker.google.com/issues/158718687`).
-This cannot be settled from documentation, and `localhost` is not representative because
-the session URI is issued against a specific `Origin`.
+This cannot be settled from documentation. Test the actual deployed origin and
+server-issued session URI; do not assume that localhost or Node fetch proves CORS.
 
-**Test in M0:** from the deployed origin, PUT one chunk and confirm the browser sees the
-response. If it fails, fall back to handing the browser a short-lived access token (never
-the refresh token) and documenting the failure.
+**Test in M0:** confirm the data PUT and its response are browser-readable. The bundled
+108 KB file is smaller than the 8 MiB chunk size, so it alone does not exercise a 308.
+Use an allowed 256 KiB chunk size and a sufficiently large test video to verify a
+nonfinal 308, exposed `Range`, and status PUT (`Content-Range: bytes */total`).
+Never infer received bytes from the size sent. If a short-lived access-token fallback
+is necessary, design and document it explicitly; public sessions currently expose no
+Google credentials. Never expose the refresh token.
 
 ## Section 12 — unverified assumptions
 
@@ -95,7 +92,7 @@ the refresh token) and documenting the failure.
 | YouTube plays a 1 fps video | **Open** — needs an upload |
 | AAC encoder delay creates an edit list | **Answered: no edit list**, but audio runs ~77 ms long |
 | Real `videos.insert` quota | **Open** — read it in the Cloud console |
-| Scheduled publishing before the audit | **Open** — M0 test |
+| Scheduled publishing for this project | **Open** — M0 test; private-lock assumptions refreshed above |
 | Browser can PUT to the session URI | **Open** — M0 test |
 
 ### Mediabunny (1.61.4) option names
@@ -190,15 +187,15 @@ Environment: Chrome 155.0.8059.40, `HeadlessChrome` on macOS, secure context.
 ### Three things M1 must copy from this probe
 
 1. **`new Quality(1_500_000)` does not work.** Mediabunny's number shorthand is not a
-   bitrate. With it, Mediabunny builds the codec string `avc1.64003e` (High **3.0**),
-   which cannot carry 1920×1080, and `canEncodeVideo` returns `false`. Use
+   bitrate. The unsupported numeric variant was observed; `avc1.64003e` ends
+   in `0x3e` (level_idc 62, **6.2**, not 3.0 as previously recorded). Use
    `new Quality({ bitrate: 1_500_000 })`, or `bitrateMode: 'constant'` for CBR. This is
    the difference between "works" and "this environment is unsupported".
 2. **Pin `fullCodecString: 'avc1.640028'` explicitly** so the level cannot be inferred
    downward. Note the muxed file then declares `avc1.640c28`, not `avc1.640028`: the
    macOS encoder sets constraint-set flags 2 and 3 (`0x0c`). Still H.264 High, still
-   level 4.0, and YouTube accepts it — but a test asserting the exact string `640028`
-   inside the file would fail.
+   level 4.0. Chrome decodes it; YouTube acceptance still needs the real upload.
+   A test asserting the exact string `640028` inside the file would fail.
 3. **`fastStart: 'in-memory'` is the right setting.** The file came out non-fragmented
    with `moov` at byte 28, ahead of `mdat`, exactly as section 5 requires. Do not use
    `'fragmented'`.
@@ -232,7 +229,39 @@ counts and durations; then Chrome plays the file over HTTP with Range requests a
 packet is decoded through Mediabunny. Install one of those tools before M1's acceptance
 run to get the spec's literal check.
 
-## Verification performed
+## Reliability repairs — 17 October 2026
+
+The regression suite (`npm test`, Node 24.7+ with the installed TypeScript loader)
+now exercises actual upload recovery, JWT/session boundaries and cookie persistence,
+owner guards/API errors, metadata rules, timezone edge cases, and probe acceptance.
+CI runs it on pushes and pull requests without any real Google credentials.
+
+- Retry/status recovery preserves completed video IDs, never guesses an upload offset,
+  bounds no-progress/network retries, respects Retry-After, and propagates cancellation.
+- YouTube handlers use Auth.js response wrappers to persist refreshed JWT cookies;
+  failed refreshes return actionable 401. Public `/api/auth/session` exposes neither token.
+- Browser clock/timezone initialization is hydration-safe; impossible/ambiguous DST
+  schedules are rejected. API validation issues are displayed and init can be cancelled.
+- Required codec/render/decode/playback/MP4 checks make the probe exit nonzero. Optional
+  unsupported exploratory Quality variants remain diagnostic, not mandatory failures.
+- `M0_OUTPUT_DIR` isolates fresh probe artifacts; default output paths are unchanged.
+
+These local repairs do **not** establish the deployed publishing acceptance criteria.
+
+## Real M0 acceptance record — still open
+
+Before M1, record all of the following from an owner-authorized production test:
+
+- [ ] Production URL and tested date/browser; OAuth callback and consent-screen status.
+- [ ] Nonowner denial and correct intended channel ID/name.
+- [ ] Actual Cloud Console Video Uploads quota and usage (not just the default docs).
+- [ ] Five-second MP4 video ID, UTC publishAt, initial privacy/processing state.
+- [ ] Data PUT response, nonfinal 308 exposed Range and status-query behavior for a
+      sufficiently large file; interruption resumes without creating a second video.
+- [ ] Processing/1 fps playback result and privacy after the scheduled instant.
+- [ ] Any actual project restrictions and their remedy; explicit owner approval for M1.
+
+## Historical verification performed — 13 October 2026
 
 `npm run build` and `eslint .` both pass. The M0 app was then run with `next dev` and
 checked over HTTP:

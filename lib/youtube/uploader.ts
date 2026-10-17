@@ -1,28 +1,16 @@
-/**
- * Browser-side resumable upload.
- *
- * The server starts the session and returns its URI; the MP4 itself goes
- * straight from the browser to Google so it never passes through a Vercel
- * Function (which rejects bodies over ~4.5 MB).
- *
- * No React imports: this module is plain browser code.
- */
-
-/** YouTube requires chunk sizes to be a multiple of 256 KiB. */
+/** Browser-only resumable upload: the MP4 goes directly to Google, never through Next. */
 export const CHUNK_ALIGNMENT = 256 * 1024;
-
-/** 8 MiB per chunk: aligned, and few enough requests for a 10-minute MP3. */
 export const DEFAULT_CHUNK_SIZE = CHUNK_ALIGNMENT * 32;
+const MAX_RETRIES = 5;
+const REQUEST_TIMEOUT_MS = 60_000;
 
 export type UploadProgress = {
   uploadedBytes: number;
   totalBytes: number;
-  /** 0–100, rounded. */
   percent: number;
 };
 
 export type UploadOptions = {
-  /** The `Location` header from `POST /api/youtube/init-upload`. */
   sessionUri: string;
   file: Blob;
   chunkSize?: number;
@@ -42,17 +30,34 @@ export class UploadError extends Error {
   }
 }
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", abort, { once: true });
+  });
+}
 
-function alignmentError(chunkSize: number) {
-  return new Error(
-    `Chunk size ${chunkSize} is invalid: YouTube requires a multiple of ${CHUNK_ALIGNMENT} bytes.`,
-  );
+function retryDelay(attempt: number, response?: Response): number {
+  const header = response?.headers.get("Retry-After");
+  if (header) {
+    const seconds = Number(header);
+    const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header) - Date.now();
+    if (Number.isFinite(delay)) return Math.max(0, delay);
+  }
+  return Math.min(2 ** attempt * 500, 8_000);
 }
 
 /**
- * Uploads `file` to an existing resumable session and resolves with the new
- * YouTube video id. Resumes from the server's reported offset after a failure.
+ * Recover within the same session after network/5xx failures. Only a confirmed
+ * response advances progress; a completed status query returns the original ID.
  */
 export async function uploadToResumableSession({
   sessionUri,
@@ -61,122 +66,107 @@ export async function uploadToResumableSession({
   signal,
   onProgress,
 }: UploadOptions): Promise<string> {
-  if (chunkSize % CHUNK_ALIGNMENT !== 0) {
-    throw alignmentError(chunkSize);
+  if (!Number.isSafeInteger(chunkSize) || chunkSize < CHUNK_ALIGNMENT || chunkSize % CHUNK_ALIGNMENT !== 0) {
+    throw new Error(`Chunk size must be a positive multiple of ${CHUNK_ALIGNMENT} bytes.`);
   }
-  if (chunkSize < CHUNK_ALIGNMENT) {
-    throw alignmentError(chunkSize);
-  }
+  if (file.size === 0) throw new UploadError("Cannot upload an empty file.", 0, false);
 
   const totalBytes = file.size;
   let offset = 0;
-
-  const report = () => {
-    onProgress?.({
-      uploadedBytes: offset,
-      totalBytes,
-      percent: totalBytes === 0 ? 100 : Math.round((offset / totalBytes) * 100),
-    });
+  let highestOffset = 0;
+  let attempts = 0;
+  let queryStatus = false;
+  const report = () => onProgress?.({
+    uploadedBytes: offset,
+    totalBytes,
+    percent: Math.round(offset / totalBytes * 100),
+  });
+  const retry = async (message: string, status: number, response?: Response) => {
+    attempts += 1;
+    if (attempts > MAX_RETRIES) {
+      throw new UploadError(`${message} Retry limit reached; do not create another upload without checking YouTube Studio.`, status, true);
+    }
+    await sleep(retryDelay(attempts, response), signal);
   };
 
+  signal?.throwIfAborted();
   report();
-
-  let attempt = 0;
-  while (offset < totalBytes) {
+  for (;;) {
     signal?.throwIfAborted();
-
+    const wasQuery = queryStatus;
     const end = Math.min(offset + chunkSize, totalBytes);
-    const chunk = file.slice(offset, end);
-    // The final chunk is allowed to be smaller than the alignment.
-    const contentRange = `bytes ${offset}-${end - 1}/${totalBytes}`;
-
+    const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+    const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
     let response: Response;
     try {
       response = await fetch(sessionUri, {
         method: "PUT",
-        headers: {
-          "Content-Range": contentRange,
-          "Content-Type": file.type || "video/mp4",
-        },
-        body: chunk,
-        signal,
+        headers: wasQuery
+          ? { "Content-Range": `bytes */${totalBytes}` }
+          : {
+              "Content-Range": `bytes ${offset}-${end - 1}/${totalBytes}`,
+              "Content-Type": file.type || "video/mp4",
+            },
+        body: wasQuery ? undefined : file.slice(offset, end),
+        signal: requestSignal,
       });
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      throw new UploadError("Network error while uploading to YouTube.", 0, true);
-    }
-
-    // 308 = resume incomplete: YouTube stored the bytes so far.
-    if (response.status === 308) {
-      offset = await resolveOffset(sessionUri, totalBytes, offset, end);
-      attempt = 0;
-      report();
+    } catch {
+      signal?.throwIfAborted();
+      await retry("Could not reach the YouTube upload session.", 0);
+      queryStatus = true;
       continue;
     }
+    signal?.throwIfAborted();
 
     if (response.status === 200 || response.status === 201) {
+      const body: unknown = await response.json().catch(() => null);
+      signal?.throwIfAborted();
+      if (!body || typeof body !== "object" || !("id" in body) || typeof body.id !== "string" || !body.id) {
+        throw new UploadError("YouTube accepted the upload but returned no video id. Check YouTube Studio before uploading again.", response.status, false);
+      }
       offset = totalBytes;
       report();
-      const body = (await response.json().catch(() => null)) as { id?: string } | null;
-      if (!body?.id) {
-        throw new UploadError("YouTube accepted the upload but returned no video id.", response.status, false);
-      }
       return body.id;
     }
 
-    if (response.status === 401 || response.status === 403) {
-      throw new UploadError(
-        "YouTube rejected the upload. The session may have expired or the token lost access.",
-        response.status,
-        false,
-      );
-    }
-
-    const retryable = response.status >= 500 || response.status === 429;
-    attempt += 1;
-    if (!retryable || attempt > 5) {
-      const detail = await response.text().catch(() => "");
-      throw new UploadError(
-        `YouTube upload failed (${response.status})${detail ? `: ${detail.slice(0, 300)}` : ""}`,
-        response.status,
-        retryable,
-      );
-    }
-
-    // Exponential backoff, then resume from wherever the server stopped.
-    await sleep(Math.min(2 ** attempt * 500, 8_000));
-    offset = await resolveOffset(sessionUri, totalBytes, offset, offset);
-    report();
-  }
-
-  throw new UploadError("Upload finished without a video id.", 0, false);
-}
-
-/** Asks the session how many bytes it already holds. */
-async function resolveOffset(
-  sessionUri: string,
-  totalBytes: number,
-  fallback: number,
-  sentUpTo: number,
-): Promise<number> {
-  try {
-    const response = await fetch(sessionUri, {
-      method: "PUT",
-      headers: { "Content-Range": `bytes */${totalBytes}` },
-    });
-
     if (response.status === 308) {
       const range = response.headers.get("Range");
-      const match = range ? /bytes=0-(\d+)/.exec(range) : null;
-      if (match) return Number(match[1]) + 1;
+      const match = range?.match(/^bytes=0-(\d+)$/);
+      if (range && !match) throw new UploadError("YouTube returned an invalid upload Range.", 308, false);
+      // Per Google's protocol, absent Range means no stored bytes. Never guess
+      // that the sent chunk landed; CORS-hidden headers must not advance offset.
+      const confirmed = match ? Number(match[1]) + 1 : 0;
+      if (!Number.isSafeInteger(confirmed) || confirmed > totalBytes || confirmed < offset) {
+        throw new UploadError("YouTube's confirmed upload offset is inconsistent. Check CORS access to the Range header.", 308, false);
+      }
+      offset = confirmed;
+      report();
+      if (confirmed > highestOffset) {
+        highestOffset = confirmed;
+        attempts = 0;
+      } else if (!wasQuery) {
+        await retry("YouTube is not confirming upload progress. Check CORS access to the Range header.", 308, response);
+      }
+      // A query after a failed PUT establishes the offset, but is not itself a
+      // successful data transfer. Keep retry attempts until bytes advance.
+      queryStatus = confirmed === totalBytes;
+      if (wasQuery && confirmed === totalBytes) {
+        await retry("YouTube has not returned the completed video resource.", 308, response);
+      }
+      continue;
     }
 
-    if (response.status === 200 || response.status === 201) {
-      return totalBytes;
+    if (response.status === 429 || [500, 502, 503, 504].includes(response.status)) {
+      await retry(`YouTube upload failed (${response.status}).`, response.status, response);
+      queryStatus = true;
+      continue;
     }
-  } catch {
-    // Fall through to the caller's best guess.
+
+    const detail = await response.text().catch(() => "");
+    signal?.throwIfAborted();
+    const message = response.status === 401 || response.status === 403
+      ? "YouTube rejected the upload. Sign in again and check YouTube Studio before retrying."
+      : `YouTube upload failed (${response.status})${detail ? `: ${detail.slice(0, 300)}` : ""}`;
+    throw new UploadError(message, response.status, false);
   }
-
-  return Math.max(fallback, sentUpTo);
 }

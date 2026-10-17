@@ -130,6 +130,7 @@
             encoderError = `${error.name}: ${error.message}`;
           },
         });
+        try {
         encoder.configure(config);
 
         const duration = 1e6 / FPS;
@@ -139,8 +140,11 @@
             timestamp: Math.round((i * 1e6) / FPS),
             duration,
           });
-          encoder.encode(frame, { keyFrame: i % KEYFRAME_INTERVAL === 0 });
-          frame.close();
+          try {
+            encoder.encode(frame, { keyFrame: i % KEYFRAME_INTERVAL === 0 });
+          } finally {
+            frame.close();
+          }
         }
         await encoder.flush();
         const state = encoder.state;
@@ -153,6 +157,9 @@
           keyChunks,
           encoderError,
         };
+        } finally {
+          if (encoder.state !== "closed") encoder.close();
+        }
       }
 
       /** Same idea for audio: a real encode and flush, not just a support query. */
@@ -181,17 +188,21 @@
             encoderError = `${error.name}: ${error.message}`;
           },
         });
+        try {
         encoder.configure(config);
-        encoder.encode(
-          new AudioData({
+        const data = new AudioData({
             format: "f32-planar",
             sampleRate: SAMPLE_RATE,
             numberOfFrames: buffer.length,
             numberOfChannels: CHANNELS,
             timestamp: 0,
             data: planar,
-          }),
-        );
+          });
+        try {
+          encoder.encode(data);
+        } finally {
+          data.close();
+        }
         await encoder.flush();
         const state = encoder.state;
         encoder.close();
@@ -202,6 +213,9 @@
           chunks,
           encoderError,
         };
+        } finally {
+          if (encoder.state !== "closed") encoder.close();
+        }
       }
 
       let renderedBlob = null;
@@ -294,12 +308,15 @@
         output.addVideoTrack(videoSource);
         output.addAudioTrack(audioSource);
 
+        try {
         await output.start();
         for (let i = 0; i < SECONDS * FPS; i += 1) {
           drawFrame(i);
           await videoSource.add(i / FPS, 1 / FPS);
         }
         await audioSource.add(makeTone(SECONDS));
+        videoSource.close();
+        audioSource.close();
         await output.finalize();
 
         const mimeType = await output.getMimeType();
@@ -315,10 +332,14 @@
           videoEncoderConfig,
           audioEncoderConfig,
         };
+        } finally {
+          if (output.state !== "finalized") await output.cancel();
+        }
       });
 
       await step("readBack", async () => {
         const input = new Input({ source: new BlobSource(renderedBlob), formats: ALL_FORMATS });
+        try {
         const videoTrack = await input.getPrimaryVideoTrack();
         const audioTrack = await input.getPrimaryAudioTrack();
         if (!videoTrack || !audioTrack) throw new Error("Rendered file is missing a track.");
@@ -341,8 +362,8 @@
           decodedAudioSeconds += wrapped.buffer.duration;
         }
 
-        const videoStats = await videoTrack.computePacketStats(50);
-        const audioStats = await audioTrack.computePacketStats(50);
+        const videoStats = await videoTrack.computePacketStats();
+        const audioStats = await audioTrack.computePacketStats();
 
         return {
           duration: await input.computeDuration(),
@@ -361,6 +382,9 @@
           decodedAudioBuffers: audioBuffers,
           decodedAudioSeconds: Number(decodedAudioSeconds.toFixed(3)),
         };
+        } finally {
+          input.dispose();
+        }
       });
 
       await step("chromePlayback", async () => {
@@ -379,9 +403,9 @@
 
         // A seek only works once the moov atom has been read, so this also checks fast start.
         player.currentTime = 4;
-        await new Promise((resolve) => {
-          player.addEventListener("seeked", resolve, { once: true });
-          setTimeout(resolve, 5_000);
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error("Timed out seeking the MP4")), 5_000);
+          player.addEventListener("seeked", () => { clearTimeout(timer); resolve(); }, { once: true });
         });
 
         return {

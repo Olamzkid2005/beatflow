@@ -2,11 +2,13 @@
   "name": "beatflow",
   "version": "0.1.0",
   "private": true,
+  "engines": { "node": ">=24.7.0" },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --import ./tests/register.mjs --test tests/*.test.mjs",
     "m0:probe": "node tools/m0-probe/run.mjs"
   },
   "dependencies": {
@@ -14,7 +16,8 @@
     "next": "16.4.0",
     "next-auth": "^5.0.0-beta.32",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",

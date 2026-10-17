@@ -12,12 +12,13 @@
  * script.
  */
 import { spawn } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { inspectMp4 } from "./mp4.mjs";
+import { assertProbeResults, inspectMp4 } from "./mp4.mjs";
 import { startProbeServer } from "./server.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -26,8 +27,10 @@ const MEDIABUNNY_BUNDLE = join(
   projectRoot,
   "node_modules/mediabunny/dist/bundles/mediabunny.min.mjs",
 );
-const OUTPUT_MP4 = join(projectRoot, "public/beatflow-m0-test-5s.mp4");
-const REPORT_JSON = join(here, "report.json");
+// Optional isolated output directory preserves the historical bundled artifact.
+const outputDir = process.env.M0_OUTPUT_DIR ? resolve(process.env.M0_OUTPUT_DIR) : null;
+const OUTPUT_MP4 = outputDir ? join(outputDir, "beatflow-m0-test-5s.mp4") : join(projectRoot, "public/beatflow-m0-test-5s.mp4");
+const REPORT_JSON = outputDir ? join(outputDir, "report.json") : join(here, "report.json");
 
 const CHROME_CANDIDATES = [
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -141,7 +144,7 @@ async function main() {
   }
 
   await mkdir(dirname(OUTPUT_MP4), { recursive: true });
-  await mkdir(here, { recursive: true });
+  await mkdir(dirname(REPORT_JSON), { recursive: true });
 
   const server = await startProbeServer({
     port: SERVER_PORT,
@@ -155,7 +158,7 @@ async function main() {
   });
 
   const consoleLines = [];
-  const profileDir = join(here, ".chrome-profile");
+  const profileDir = await mkdtemp(join(tmpdir(), "beatflow-m0-chrome-"));
   const chromeArgs = [
     `--remote-debugging-port=${DEBUG_PORT}`,
     `--user-data-dir=${profileDir}`,
@@ -173,6 +176,9 @@ async function main() {
   let boxes = null;
   let chromeVersion = null;
   let failure = null;
+  let client = null;
+  let spawnError = null;
+  child.once("error", (error) => { spawnError = error; });
 
   try {
     const version = await waitForDevTools(20_000);
@@ -181,7 +187,7 @@ async function main() {
 
     const targetUrl = `${server.url}/probe.html`;
     const wsUrl = await openTarget(targetUrl);
-    const client = connect(wsUrl, { onConsole: (line) => consoleLines.push(line) });
+    client = connect(wsUrl, { onConsole: (line) => consoleLines.push(line) });
     await client.ready;
     await client.send("Runtime.enable");
 
@@ -198,6 +204,7 @@ async function main() {
       throw new Error(`The probe did not finish (page status: ${status ?? "unknown"}).`);
     }
 
+    if (spawnError) throw spawnError;
     report = await evaluate(client, "globalThis.__probe");
 
     // Re-inspect the file the server wrote: independent of the page's own reader.
@@ -214,10 +221,12 @@ async function main() {
   } catch (error) {
     failure = error instanceof Error ? error.message : String(error);
   } finally {
+    client?.close();
     child.kill("SIGTERM");
-    await sleep(300);
-    if (!child.killed) child.kill("SIGKILL");
+    for (let i = 0; i < 20 && child.exitCode === null && child.signalCode === null; i += 1) await sleep(100);
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
     await server.close();
+    await rm(profileDir, { recursive: true, force: true, maxRetries: 3 });
   }
 
   if (failure) {
@@ -239,6 +248,12 @@ async function main() {
   await writeFile(REPORT_JSON, `${JSON.stringify(output, null, 2)}\n`);
 
   printReport(output);
+  try {
+    assertProbeResults(report, boxes);
+  } catch (error) {
+    console.error(`Required media check failed: ${error instanceof Error ? error.message : error}`);
+    process.exitCode = 1;
+  }
 }
 
 function line(label, value) {

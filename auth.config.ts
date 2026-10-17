@@ -3,13 +3,7 @@ import Google from "next-auth/providers/google";
 
 import { isOwner } from "@/lib/owner";
 
-/**
- * Edge-safe Auth.js configuration.
- *
- * This file must not import anything that only works in the Node.js runtime,
- * because `middleware.ts` loads it on the Edge runtime. Token refresh lives in
- * `auth.ts` instead.
- */
+/** Shared Google provider and optimistic owner gate. Token refresh stays in auth.ts. */
 const authConfig: NextAuthConfig = {
   trustHost: true,
   providers: [
@@ -39,9 +33,16 @@ const authConfig: NextAuthConfig = {
     signIn({ profile }) {
       return isOwner(profile?.email);
     },
-    /** Used by the middleware wrapper: false redirects to the sign-in page. */
-    authorized({ auth }) {
-      return isOwner(auth?.user?.email);
+    /** Pages redirect to sign-in; API clients always get machine-readable errors. */
+    authorized({ auth, request }) {
+      if (isOwner(auth?.user?.email)) return true;
+      if (request.nextUrl.pathname.startsWith("/api/youtube/")) {
+        return Response.json(
+          { error: auth?.user ? "This tool is restricted to its owner." : "Not signed in. Sign in again." },
+          { status: auth?.user ? 403 : 401 },
+        );
+      }
+      return false;
     },
   },
 };

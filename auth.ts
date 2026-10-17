@@ -1,4 +1,4 @@
-import NextAuth from "next-auth";
+import NextAuth, { type NextAuthConfig } from "next-auth";
 import type { JWT } from "next-auth/jwt";
 
 import authConfig from "@/auth.config";
@@ -10,7 +10,7 @@ const EXPIRY_SLACK_SECONDS = 60;
 
 async function refreshAccessToken(token: JWT): Promise<JWT> {
   if (!token.refreshToken) {
-    return { ...token, error: "MissingRefreshToken" };
+    return { ...token, accessToken: undefined, error: "MissingRefreshToken" };
   }
 
   try {
@@ -24,6 +24,7 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
         refresh_token: token.refreshToken,
       }),
       cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
     });
 
     const payload = (await response.json()) as {
@@ -46,11 +47,11 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
       error: undefined,
     };
   } catch {
-    return { ...token, error: "RefreshAccessTokenError" };
+    return { ...token, accessToken: undefined, error: "RefreshAccessTokenError" };
   }
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+const config = {
   ...authConfig,
   session: { strategy: "jwt" },
   callbacks: {
@@ -61,6 +62,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
         token.expiresAt = account.expires_at;
+        token.error = undefined;
       }
 
       if (profile?.email) {
@@ -76,13 +78,30 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return refreshAccessToken(token);
     },
     async session({ session, token }) {
-      // The refresh token deliberately never reaches the session object.
-      session.accessToken = token.accessToken;
-      session.error = token.error;
-      if (token.email) {
-        session.user.email = token.email;
-      }
-      return session;
+      // This callback is also used by GET /api/auth/session. No Google
+      // credentials belong in that browser-readable representation.
+      return {
+        expires: session.expires,
+        user: { name: session.user.name, email: token.email, image: session.user.image },
+        error: token.error,
+      };
+    },
+  },
+} satisfies NextAuthConfig;
+
+export const { handlers, signIn, signOut } = NextAuth(config);
+
+// Only server imports use this instance. Route wrappers persist refreshed JWT
+// cookies; its session projection never serves /api/auth/session.
+export const { auth } = NextAuth({
+  ...config,
+  callbacks: {
+    ...config.callbacks,
+    async session(args) {
+      return {
+        ...await config.callbacks.session(args),
+        accessToken: args.token.accessToken,
+      };
     },
   },
 });

@@ -43,6 +43,12 @@ export default async function Home() {
             <span className="text-sm text-zinc-500">Signed in as</span>
             <span className="font-medium">{session?.user?.email}</span>
           </div>
+          {session?.error ? (
+            <form action={signInWithGoogle}>
+              <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">Google access expired or was revoked. Sign in again to continue.</p>
+              <button type="submit" className="h-11 rounded-full bg-foreground px-6 font-medium text-background">Sign in again with Google</button>
+            </form>
+          ) : null}
           <div className="flex flex-wrap gap-3">
             <Link
               href="/generate"

@@ -16,7 +16,7 @@ export function browserTimeZone(): string {
 function timeZoneOffsetMinutes(instantMs: number, timeZone: string): number {
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone,
-    hour12: false,
+    hourCycle: "h23",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -44,9 +44,10 @@ function timeZoneOffsetMinutes(instantMs: number, timeZone: string): number {
 /**
  * Converts a `datetime-local` value ("2026-10-20T18:00") interpreted as
  * wall-clock time in `timeZone` into strict UTC ISO 8601 ("2026-10-20T17:00:00Z").
+ * Rejects nonexistent or ambiguous wall times instead of silently choosing a DST offset.
  */
 export function toUtcIso8601(localValue: string, timeZone: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(localValue);
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(localValue);
   if (!match) {
     throw new Error("Expected a datetime-local value, for example 2026-10-20T18:00.");
   }
@@ -57,11 +58,24 @@ export function toUtcIso8601(localValue: string, timeZone: string): string {
   const hour = Number(match[4]);
   const minute = Number(match[5]);
 
-  const asUtc = Date.UTC(year, month - 1, day, hour, minute);
-  const offsetMinutes = timeZoneOffsetMinutes(asUtc, timeZone);
-  const instant = asUtc - offsetMinutes * 60_000;
+  // ISO parsing avoids Date.UTC's special handling of years 00–99. The round
+  // trip rejects invalid month/day/clock components rather than normalizing.
+  const asUtc = Date.parse(`${localValue}:00Z`);
+  if (!Number.isFinite(asUtc) || new Date(asUtc).toISOString().slice(0, 16) !== localValue || year < 1 || month < 1 || day < 1 || hour > 23 || minute > 59) {
+    throw new Error("The schedule is not a valid calendar date and time.");
+  }
 
-  return new Date(instant).toISOString().replace(/\.\d{3}Z$/, "Z");
+  // Offsets on either side of the local date cover DST changes, including
+  // fractional-hour transitions and date-line changes. Round-trip candidates
+  // through the zone to distinguish valid, skipped and repeated wall times.
+  const dayMs = 86_400_000;
+  const offsets = new Set([-2, -1, 0, 1, 2].map((days) => timeZoneOffsetMinutes(asUtc + days * dayMs, timeZone)));
+  const candidates = [...offsets]
+    .map((offset) => asUtc - offset * 60_000)
+    .filter((instant) => instant + timeZoneOffsetMinutes(instant, timeZone) * 60_000 === asUtc);
+  if (candidates.length === 0) throw new Error("This local time does not exist because the clocks change. Choose another time.");
+  if (candidates.length > 1) throw new Error("This local time is ambiguous because the clocks change. Choose another time.");
+  return new Date(candidates[0]).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
 /** Formats a `Date` as a `datetime-local` input value. */

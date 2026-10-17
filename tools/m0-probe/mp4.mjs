@@ -7,6 +7,49 @@
  * which sample entries and dimensions each track carries.
  */
 
+import assert from "node:assert/strict";
+
+/** Required M0 media checks; exploratory unsupported codec variants are allowed. */
+export function assertProbeResults(probe, mp4) {
+  const required = ["environment", "webcodecsVideo", "webcodecsAudio", "mediabunnyCapabilities", "renderMp4", "readBack", "chromePlayback"];
+  for (const name of required) assert.equal(probe?.steps?.[name]?.ok, true, `${name}: ${probe?.steps?.[name]?.error ?? "missing or failed"}`);
+  const { environment, webcodecsVideo, webcodecsAudio, mediabunnyCapabilities, renderMp4, readBack, chromePlayback } = probe.steps;
+  assert.equal(environment.secureContext, true, "Secure context required");
+  for (const encoded of [webcodecsVideo, webcodecsAudio]) {
+    assert.equal(encoded.isConfigSupported, true, "Codec support check failed");
+    assert(encoded.chunks > 0, "Real encode produced no chunks");
+    assert.equal(encoded.encoderError, null, "Encoder callback reported failure");
+  }
+  assert.equal(mediabunnyCapabilities.videoVariants?.["pinned avc1.640028"]?.supported, true);
+  assert.equal(mediabunnyCapabilities.canEncodeAudio, true);
+  assert.equal(renderMp4.saved, true, "MP4 was not saved");
+  assert.equal(renderMp4.outputState, "finalized");
+  assert(mp4, "MP4 inspection missing");
+  assert.equal(mp4.fileSize, renderMp4.bytes);
+  assert.equal(mp4.moovBeforeMdat, true, "MP4 is not fast start");
+  assert.equal(mp4.hasElst, false, "MP4 contains an edit list");
+  assert(!mp4.topLevel.some((box) => box.type === "moof"), "Fragmented MP4 is not supported");
+  const video = mp4.tracks.find((track) => track.handler === "vide");
+  const audio = mp4.tracks.find((track) => track.handler === "soun");
+  assert.equal(video?.codec, "avc1");
+  assert.equal(video?.codedWidth, 1920);
+  assert.equal(video?.codedHeight, 1080);
+  assert.equal(video?.sampleCount, 5);
+  assert.equal(audio?.codec, "mp4a");
+  assert.equal(audio?.sampleRate, 48000);
+  assert.equal(audio?.channels, 2);
+  assert(Math.abs(video.mediaSeconds - 5) <= 0.1, "Video duration mismatch");
+  assert(Math.abs(audio.mediaSeconds - 5) <= 0.1, "Audio duration mismatch");
+  assert.equal(readBack.decodedFrames, 5);
+  assert(readBack.decodedAudioBuffers > 0, "No audio decoded");
+  assert(Math.abs(readBack.duration - 5) <= 0.1, "Decoded duration mismatch");
+  assert.equal(chromePlayback.error, null);
+  assert(chromePlayback.playedTo > 0, "Chrome playback did not advance");
+  assert(Math.abs(chromePlayback.seekedTo - 4) < 0.25, "Chrome seeking failed");
+  assert.equal(chromePlayback.videoWidth, 1920);
+  assert.equal(chromePlayback.videoHeight, 1080);
+}
+
 const CONTAINER_BOXES = new Set([
   "moov",
   "trak",

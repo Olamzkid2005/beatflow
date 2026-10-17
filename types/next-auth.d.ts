@@ -2,7 +2,7 @@ import type { DefaultSession } from "next-auth";
 
 declare module "next-auth" {
   interface Session {
-    /** Short-lived Google access token, server-side only. */
+    /** Internal server auth instance only; omitted from public session responses. */
     accessToken?: string;
     /** Set when the refresh token could not be exchanged. */
     error?: string;

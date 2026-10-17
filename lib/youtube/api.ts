@@ -23,12 +23,13 @@ export function authedFetch(
   accessToken: string,
   init: RequestInit = {},
 ): Promise<Response> {
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${accessToken}`);
+  const timeout = AbortSignal.timeout(15_000);
   return fetch(url, {
     ...init,
-    headers: {
-      ...init.headers,
-      Authorization: `Bearer ${accessToken}`,
-    },
+    headers,
+    signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout,
     cache: "no-store",
   });
 }

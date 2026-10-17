@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { auth } from "@/auth";
 import { requireOwner } from "@/lib/require-owner";
-import { readGoogleError, YOUTUBE_UPLOAD_BASE } from "@/lib/youtube/api";
+import { authedFetch, readGoogleError, YOUTUBE_UPLOAD_BASE } from "@/lib/youtube/api";
 import { buildVideoResource, videoMetadataSchema } from "@/lib/youtube/metadata";
 
 export const runtime = "nodejs";
@@ -15,15 +16,14 @@ const initUploadSchema = z.object({
   fileSize: z.number().int().positive(),
 });
 
-export async function POST(request: Request) {
-  const owner = await requireOwner();
+export const POST = auth(async (request) => {
+  const owner = await requireOwner(request.auth);
   if (!owner.ok) {
     return NextResponse.json({ error: owner.error }, { status: owner.status });
   }
 
   const payload = await request.json().catch(() => null);
   const parsed = initUploadSchema.safeParse(payload);
-
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Invalid upload request.", issues: parsed.error.issues },
@@ -32,36 +32,42 @@ export async function POST(request: Request) {
   }
 
   const { metadata, fileSize } = parsed.data;
-
-  const response = await fetch(
-    `${YOUTUBE_UPLOAD_BASE}/videos?uploadType=resumable&part=snippet,status`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${owner.accessToken}`,
-        "Content-Type": "application/json; charset=UTF-8",
-        "X-Upload-Content-Length": String(fileSize),
-        "X-Upload-Content-Type": "video/mp4",
+  try {
+    const response = await authedFetch(
+      `${YOUTUBE_UPLOAD_BASE}/videos?uploadType=resumable&part=snippet,status`,
+      owner.accessToken,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json; charset=UTF-8",
+          "X-Upload-Content-Length": String(fileSize),
+          "X-Upload-Content-Type": "video/mp4",
+        },
+        body: JSON.stringify(buildVideoResource(metadata)),
+        cache: "no-store",
       },
-      body: JSON.stringify(buildVideoResource(metadata)),
-      cache: "no-store",
-    },
-  );
-
-  if (!response.ok) {
-    return NextResponse.json(
-      { error: await readGoogleError(response) },
-      { status: response.status },
     );
-  }
 
-  const sessionUri = response.headers.get("Location");
-  if (!sessionUri) {
+    if (!response.ok) {
+      return NextResponse.json(
+        { error: await readGoogleError(response) },
+        { status: response.status },
+      );
+    }
+
+    const sessionUri = response.headers.get("Location");
+    if (!sessionUri) {
+      return NextResponse.json(
+        { error: "YouTube did not return a resumable session URI." },
+        { status: 502 },
+      );
+    }
+
+    return NextResponse.json({ sessionUri });
+  } catch {
     return NextResponse.json(
-      { error: "YouTube did not return a resumable session URI." },
+      { error: "Could not initialize the YouTube upload. Try again." },
       { status: 502 },
     );
   }
-
-  return NextResponse.json({ sessionUri });
-}
+});

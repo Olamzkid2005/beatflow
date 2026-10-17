@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { browserTimeZone, toDateTimeLocalValue, toUtcIso8601 } from "@/lib/time";
 import { uploadToResumableSession, type UploadProgress } from "@/lib/youtube/uploader";
@@ -21,11 +22,20 @@ type UploadResult = {
 
 const TEST_TITLE = "BeatFlow M0 test — 5 seconds";
 
+const subscribe = () => () => {};
+
+// The browser owns clock/timezone values. The server and hydration render a
+// stable loading state before mounting this interactive form.
+export default function GeneratePage() {
+  const mounted = useSyncExternalStore(subscribe, () => true, () => false);
+  return mounted ? <UploadForm /> : <main className="mx-auto p-8" role="status">Loading upload form…</main>;
+}
+
 function defaultSchedule(): string {
   return toDateTimeLocalValue(new Date(Date.now() + 10 * 60 * 1000));
 }
 
-export default function GeneratePage() {
+function UploadForm() {
   const [channel, setChannel] = useState<Channel | null>(null);
   const [channelError, setChannelError] = useState<string | null>(null);
 
@@ -45,8 +55,9 @@ export default function GeneratePage() {
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
 
-    fetch("/api/youtube/channel")
+    fetch("/api/youtube/channel", { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]) })
       .then(async (response) => {
         const body = await response.json();
         if (cancelled) return;
@@ -62,12 +73,14 @@ export default function GeneratePage() {
 
     return () => {
       cancelled = true;
+      controller.abort();
       abortRef.current?.abort();
     };
   }, []);
 
   async function startUpload(event: React.FormEvent) {
     event.preventDefault();
+    if (abortRef.current) return;
     setError(null);
     setResult(null);
     setProgress(null);
@@ -80,8 +93,9 @@ export default function GeneratePage() {
     let publishAt: string | null = null;
     try {
       publishAt = schedule ? toUtcIso8601(schedule, timeZone) : null;
-    } catch {
-      setError("The schedule value is not a valid date and time.");
+      if (publishAt && Date.parse(publishAt) <= Date.now()) throw new Error("Choose a schedule in the future.");
+    } catch (scheduleError) {
+      setError(scheduleError instanceof Error ? scheduleError.message : "Invalid schedule.");
       return;
     }
 
@@ -93,6 +107,7 @@ export default function GeneratePage() {
       const initResponse = await fetch("/api/youtube/init-upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
         body: JSON.stringify({
           metadata: {
             title,
@@ -111,16 +126,22 @@ export default function GeneratePage() {
 
       const initBody = await initResponse.json();
       if (!initResponse.ok) {
-        throw new Error(initBody.error ?? `Could not start the upload (${initResponse.status})`);
+        const details = Array.isArray(initBody.issues)
+          ? initBody.issues.map((issue: { message?: string }) => issue.message).filter(Boolean).join(" ")
+          : "";
+        throw new Error(details || initBody.error || `Could not start the upload (${initResponse.status})`);
       }
 
+      controller.signal.throwIfAborted();
+      if (typeof initBody.sessionUri !== "string") throw new Error("YouTube did not provide an upload session.");
       const videoId = await uploadToResumableSession({
-        sessionUri: initBody.sessionUri as string,
+        sessionUri: initBody.sessionUri,
         file,
         signal: controller.signal,
         onProgress: setProgress,
       });
 
+      controller.signal.throwIfAborted();
       setResult({
         videoId,
         publishAt: publishAt ?? "immediate",
@@ -128,7 +149,8 @@ export default function GeneratePage() {
       });
     } catch (uploadError) {
       if (controller.signal.aborted) {
-        setError("Upload cancelled.");
+        setProgress(null);
+        setError("Upload cancelled. If YouTube already accepted it, cancellation does not remove the video; check YouTube Studio before uploading again.");
       } else {
         setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
       }
@@ -171,6 +193,7 @@ export default function GeneratePage() {
       </section>
 
       <form onSubmit={startUpload} className="flex flex-col gap-5">
+        <fieldset disabled={busy} className="flex min-w-0 flex-col gap-5 border-0 p-0">
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">Title</span>
           <input
@@ -233,6 +256,8 @@ export default function GeneratePage() {
           </span>
         </label>
 
+        </fieldset>
+        <p className="text-sm text-zinc-500">Keep this tab open until the upload finishes. YouTube handles publication afterwards.</p>
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="submit"
@@ -255,7 +280,7 @@ export default function GeneratePage() {
 
       {progress ? (
         <div className="flex flex-col gap-2">
-          <div className="h-2 w-full overflow-hidden rounded-full bg-black/[.08] dark:bg-white/[.12]">
+          <div role="progressbar" aria-label="YouTube upload" aria-valuenow={progress.percent} aria-valuemin={0} aria-valuemax={100} className="h-2 w-full overflow-hidden rounded-full bg-black/[.08] dark:bg-white/[.12]">
             <div
               className="h-full rounded-full bg-foreground transition-[width]"
               style={{ width: `${progress.percent}%` }}
@@ -269,13 +294,15 @@ export default function GeneratePage() {
       ) : null}
 
       {error ? (
-        <p className="rounded-lg border border-red-500/30 bg-red-500/5 p-4 text-red-600 dark:text-red-400">
+        <p role="alert" className="rounded-lg border border-red-500/30 bg-red-500/5 p-4 text-red-600 dark:text-red-400">
           {error}
         </p>
       ) : null}
 
+      <Link href="/" className="text-sm underline">Account and sign-in</Link>
+
       {result ? (
-        <div className="flex flex-col gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-6">
+        <div role="status" className="flex flex-col gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-6">
           <h2 className="font-medium text-emerald-700 dark:text-emerald-400">Uploaded</h2>
           <p className="text-sm">
             Video id <code className="font-mono">{result.videoId}</code>

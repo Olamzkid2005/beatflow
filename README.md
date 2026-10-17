@@ -24,8 +24,9 @@ Single user. No multi-user support. Build order and acceptance criteria live in
 that starts a resumable session on the server and PUTs the file from the browser.
 
 M1 and later are not started. See `M0-FINDINGS.md` for the section 3 and section 12
-research answers, including two items that must be settled by a real upload before M1
-is worth building.
+research answers and the real-project acceptance checklist. Deployed CORS, scheduled
+publication/processing, and the owner's actual quota remain unverified. M0 reliability
+repairs do not start M1 or replace that acceptance run.
 
 ## Environment variables
 
@@ -51,8 +52,13 @@ https://<production-domain>/api/auth/callback/google
 
 ```bash
 npm install
+npm test
 npm run dev
 ```
+
+Use Node **24.7+** (CI uses Node 24); native tests load real TypeScript sources using
+the already installed compiler, with no test framework dependency. Test credentials
+and Google responses are synthetic; tests do not publish videos.
 
 `http://localhost:3113` is the port used during M0 verification; plain `npm run dev`
 uses 3000.
@@ -62,6 +68,7 @@ uses 3000.
 ```bash
 npm run m0:probe          # headless
 npm run m0:probe -- --headful
+M0_OUTPUT_DIR=/tmp/beatflow-m0 npm run m0:probe  # preserve bundled artifacts
 ```
 
 Runs `tools/m0-probe/` in the installed Chrome (override with `CHROME_PATH`) and answers
@@ -75,13 +82,18 @@ Outputs:
 - `public/beatflow-m0-test-5s.mp4` — the test video the M0 page uploads to YouTube.
 - `tools/m0-probe/report.json` — the full run, including the MP4's box layout.
 
+Required encode, decode, playback and MP4 checks fail with a nonzero exit status.
+Unsupported exploratory Quality variants are reported without failing the required
+supported configuration. These checks do not certify YouTube processing, BT.709/
+chroma/progressive details, long-track performance or repeat-render memory behavior.
+
 It is a test harness, not part of the app: nothing under `tools/` is imported by Next.
 
 ## Structure
 
 ```
-auth.config.ts            Edge-safe Auth.js config (Google provider, owner gate)
-auth.ts                   Node Auth.js instance (refresh-token handling)
+auth.config.ts            Google provider + optimistic owner gate
+auth.ts                   Public session projection + internal server auth/refresh
 proxy.ts                  Next 16 proxy, replaces middleware.ts
 app/
   page.tsx                Sign-in entry point
@@ -111,10 +123,14 @@ the engine can be tested and reused.
 
 ## Security
 
-- Every `/api/youtube/*` route calls `requireOwner()`, and `proxy.ts` rejects non-owner
+- Every `/api/youtube/*` route calls `requireOwner(request.auth)`, and `proxy.ts` rejects non-owner
   sessions before the request arrives. Both layers are deliberate.
 - `OWNER_EMAIL` fails closed: when it is unset, nothing is authorized.
-- The Google refresh token lives only in the encrypted Auth.js JWT. It is never copied
-  onto `Session` and never reaches the browser.
+- The Google refresh token lives only in the encrypted Auth.js JWT. Public session
+  responses expose neither Google token. Internal server sessions include only the
+  access token; route wrappers persist refreshed JWT cookies on their response.
+- API authentication failures return JSON 401/403 rather than HTML redirects.
+- Cancellation stops local work, not a video already accepted by YouTube; check Studio
+  before retrying an uncertain final result. DST gaps/repeated times are rejected.
 - The MP4 never passes through an API route, so Vercel's ~4.5 MB body limit does not apply.
 - HTTPS only — WebCodecs needs a secure context.

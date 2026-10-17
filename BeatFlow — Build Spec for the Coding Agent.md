@@ -42,6 +42,13 @@ Rendering must stay light on CPU and RAM, even on an older laptop.
 
 ## 3. Risks to settle first (Milestone 0)
 
+> Research update, 17 October 2026: the current official `videos.insert` reference
+> says unverified-project uploads are **not** restricted to private viewing. Its quota
+> reference confirms a separate 100-call/day Video Uploads bucket. Item 1 below records
+> the original risk assumption, not verified current policy. Follow the refreshed
+> evidence and acceptance checklist in `M0-FINDINGS.md`; a real scheduling/CORS/project
+> quota result and milestone approval are still required before M1.
+
 1. **Audit lock.** Videos uploaded through the API from an unverified Google Cloud project created after 28 July 2020 are locked to private until the project passes a compliance audit. Test whether a scheduled video (private + `publishAt`) still goes public on schedule. If it does not, apply for the audit before building anything else.
 2. **Quota.** Sources conflict. Older sources say one upload costs 1,600 of 10,000 daily units (about 6 uploads a day). Google's current quota page says `videos.insert` has its own bucket of 100 calls a day. Read the real number in the Google Cloud Console and record it.
 3. **OAuth Testing mode.** In Testing status, refresh tokens expire after 7 days. Set the consent screen to In production. The unverified-app warning is acceptable for a single user.
