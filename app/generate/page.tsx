@@ -4,7 +4,12 @@ import Link from "next/link";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { browserTimeZone, toDateTimeLocalValue, toUtcIso8601 } from "@/lib/time";
-import { uploadToResumableSession, type UploadProgress } from "@/lib/youtube/uploader";
+import {
+  CHUNK_ALIGNMENT,
+  DEFAULT_CHUNK_SIZE,
+  uploadToResumableSession,
+  type UploadProgress,
+} from "@/lib/youtube/uploader";
 
 type Channel = {
   id: string;
@@ -44,6 +49,7 @@ function UploadForm() {
   const [tags, setTags] = useState("");
   const [schedule, setSchedule] = useState(defaultSchedule);
   const [file, setFile] = useState<File | null>(null);
+  const [chunkSize, setChunkSize] = useState(DEFAULT_CHUNK_SIZE);
 
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
@@ -137,6 +143,7 @@ function UploadForm() {
       const videoId = await uploadToResumableSession({
         sessionUri: initBody.sessionUri,
         file,
+        chunkSize,
         signal: controller.signal,
         onProgress: setProgress,
       });
@@ -254,6 +261,28 @@ function UploadForm() {
             </a>{" "}
             (1080p, 1 fps, from <code className="font-mono">npm run m0:probe</code>).
           </span>
+        </label>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium">Upload chunk size</span>
+          <select
+            value={chunkSize}
+            onChange={(event) => setChunkSize(Number(event.target.value))}
+            className="h-11 rounded-lg border border-black/[.12] px-3 dark:border-white/[.18] dark:bg-transparent"
+          >
+            <option value={DEFAULT_CHUNK_SIZE}>8 MiB — normal upload</option>
+            <option value={CHUNK_ALIGNMENT}>256 KiB — CORS / 308 test</option>
+          </select>
+          <span className="text-xs text-zinc-500">
+            A non-final 308 requires a file larger than the selected chunk. The bundled
+            test MP4 fits in one request, so it cannot exercise that path.
+          </span>
+          {file && file.size <= chunkSize ? (
+            <span className="text-xs text-amber-600 dark:text-amber-400">
+              This file fits in one request and will not expose a non-final 308. Choose a
+              larger MP4 for the CORS acceptance check.
+            </span>
+          ) : null}
         </label>
 
         </fieldset>

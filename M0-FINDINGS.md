@@ -77,9 +77,10 @@ server-issued session URI; do not assume that localhost or Node fetch proves COR
 
 **Test in M0:** confirm the data PUT and its response are browser-readable. The bundled
 108 KB file is smaller than the 8 MiB chunk size, so it alone does not exercise a 308.
-Use an allowed 256 KiB chunk size and a sufficiently large test video to verify a
-nonfinal 308, exposed `Range`, and status PUT (`Content-Range: bytes */total`).
-Never infer received bytes from the size sent. If a short-lived access-token fallback
+Choose the page's 256 KiB chunk option and upload a sufficiently large test video to
+verify a nonfinal 308, exposed `Range`, and status PUT (`Content-Range: bytes */total`).
+The page warns when the selected file fits in a single request, which would not expose
+a 308. Never infer received bytes from the size sent. If a short-lived access-token fallback
 is necessary, design and document it explicitly; public sessions currently expose no
 Google credentials. Never expose the refresh token.
 
@@ -256,8 +257,9 @@ Before M1, record all of the following from an owner-authorized production test:
 - [ ] Nonowner denial and correct intended channel ID/name.
 - [ ] Actual Cloud Console Video Uploads quota and usage (not just the default docs).
 - [ ] Five-second MP4 video ID, UTC publishAt, initial privacy/processing state.
-- [ ] Data PUT response, nonfinal 308 exposed Range and status-query behavior for a
-      sufficiently large file; interruption resumes without creating a second video.
+- [ ] Data PUT response, nonfinal 308 exposed Range and status-query behavior using
+      the 256 KiB chunk option and a sufficiently large file; interruption resumes
+      without creating a second video.
 - [ ] Processing/1 fps playback result and privacy after the scheduled instant.
 - [ ] Any actual project restrictions and their remedy; explicit owner approval for M1.
 

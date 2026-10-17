@@ -20,7 +20,7 @@ Repair phases:
 4. [done] Required probe assertions, CI regression command, refreshed M0 acceptance documentation.
 5. [done] Final 29 regression tests, lint, TypeScript, production build, two-zone production browser verification and isolated real media probe.
 
-No M1 renderer, deployment, OAuth, or real upload has been started. Remaining M0 acceptance requires the owner's configured Google project and production origin. Test services are stopped after verification.
+No M1 renderer, deployment, OAuth, or real upload has been started. Remaining M0 acceptance requires the owner's configured Google project and production origin. The M0 page now exposes a 256 KiB chunk option for the required non-final 308/CORS check. Test services are stopped after verification.
 
 ## Original review goal and acceptance criteria
 

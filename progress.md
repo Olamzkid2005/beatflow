@@ -15,7 +15,8 @@
 - Final suite: 29/29 pass, including Retry-After, repeated network limits, cancellation during final-resource parsing and unset owner configuration. `npm run lint`, `npx tsc --noEmit`, `git diff --check` and final production build all pass.
 - Final production browser checks reran after the last route formatting changes and rebuild: two-zone hydration, credential-free public sessions, JSON API denials, validation detail, init cancel and one mocked upload all pass; browser console empty.
 - Package/lock agree; zod is runtime, not dev-only. Baseline public MP4 and historical report byte-equal HEAD. Native runner requires Node 24.7+, documented and declared; npm recorded existing bundled optional Tailwind WASM dependencies when refreshing the lockfile.
-- M0 repairs complete locally. Actual owner Google OAuth, deployed-origin CORS/Range/status, quota, processing/scheduled publication remain open in M0-FINDINGS. M1 not started. No pushes, commits or deployments performed.
+- M0 repairs committed and pushed as `b72f677`. Actual owner Google OAuth, deployed-origin CORS/Range/status, quota, processing/scheduled publication remain open in M0-FINDINGS. M1 not started; no deployment performed.
+- Added a 256 KiB chunk option to the M0 page for the required non-final 308/CORS acceptance run, with a warning when the selected file fits in one request. Regression tests, lint, TypeScript and production build pass.
 
 ## Session: comprehensive review
 
