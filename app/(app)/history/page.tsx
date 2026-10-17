@@ -114,7 +114,7 @@ export default function HistoryPage() {
               onClick={() => setFilter(item.value)}
               aria-pressed={filter === item.value}
               className={cn(
-                "flex-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors sm:flex-none",
+                "flex min-h-11 flex-1 items-center justify-center rounded-lg px-3 py-1.5 text-xs font-medium transition-colors sm:min-h-8 sm:flex-none",
                 filter === item.value
                   ? "bg-surface-container-high text-primary"
                   : "text-on-surface-variant hover:text-on-surface",

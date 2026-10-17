@@ -27,6 +27,7 @@ export type IconName =
   | "plus"
   | "radio"
   | "refresh"
+  | "save"
   | "search"
   | "settings"
   | "shield"
@@ -167,6 +168,13 @@ const stroked: Partial<Record<IconName, React.ReactNode>> = {
     <>
       <path d="M20 5v5h-5" />
       <path d="M18.5 9.5A7.5 7.5 0 1 0 19 16" />
+    </>
+  ),
+  save: (
+    <>
+      <path d="M5 3.5h11.5L20 7v13.5H5z" />
+      <path d="M8.5 3.5v5h6v-5" />
+      <path d="M8.5 13h7v7h-7z" />
     </>
   ),
   search: (

@@ -40,7 +40,7 @@ export function TagInput({
   return (
     <div
       className={cn(
-        "flex min-h-11 w-full flex-wrap items-center gap-1.5 rounded-xl border border-surface-container-highest bg-surface-container-lowest p-1.5 shadow-[inset_0_1px_1px_rgba(0,0,0,0.25)] transition focus-within:border-primary/60 focus-within:ring-2 focus-within:ring-primary/20",
+        "flex min-h-11 w-full flex-wrap items-center gap-1.5 rounded-xl border border-outline/60 bg-surface-container-lowest p-1.5 shadow-[inset_0_1px_1px_rgba(0,0,0,0.25)] transition focus-within:border-primary/60 focus-within:ring-2 focus-within:ring-primary/20",
         className,
       )}
     >
@@ -53,7 +53,7 @@ export function TagInput({
           <button
             type="button"
             onClick={() => onChange(value.filter((item) => item !== tag))}
-            className="rounded text-outline transition hover:text-error"
+            className="flex h-6 w-6 items-center justify-center rounded text-outline transition hover:text-error"
             aria-label={`Remove ${tag}`}
           >
             <Icon name="close" className="h-3 w-3" />
@@ -79,7 +79,7 @@ export function TagInput({
         }}
         onBlur={() => commit()}
         placeholder={value.length ? "" : placeholder}
-        className="min-w-[8rem] flex-1 bg-transparent px-1 text-sm text-on-surface outline-none placeholder:text-outline"
+        className="min-w-[8rem] flex-1 bg-transparent px-1 text-base text-on-surface outline-none placeholder:text-outline sm:text-sm"
         aria-label="Add a video tag"
       />
     </div>

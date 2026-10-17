@@ -136,7 +136,7 @@ function SettingsForm() {
         </div>
         <Badge tone={saved ? "success" : "neutral"}>
           <StatusDot tone={saved ? "primary" : "muted"} />
-          {saved ? "Saved locally" : "Local draft"}
+          {saved ? "Saved locally" : "Local settings"}
         </Badge>
       </header>
 
@@ -245,7 +245,7 @@ function SettingsForm() {
 
           <div className="flex flex-wrap items-center gap-2">
             <Button type="submit" size="lg">
-              <Icon name={saved ? "check" : "download"} className="h-4 w-4" />
+              <Icon name={saved ? "check" : "save"} className="h-4 w-4" />
               {saved ? "Saved" : "Save settings"}
             </Button>
             <Button type="button" variant="outline" size="lg" onClick={handleReset}>
@@ -268,7 +268,7 @@ function SettingsForm() {
               account and do not follow you to another device.
             </p>
             <div className="mt-3 rounded-lg border border-outline-variant/60 bg-surface-container-lowest/70 px-2.5 py-2 font-mono text-[10px] text-outline">
-              beatflow.producer-settings.v1
+              This browser only
             </div>
           </Card>
 

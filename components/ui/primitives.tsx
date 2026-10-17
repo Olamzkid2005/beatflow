@@ -15,10 +15,10 @@ export function cn(...values: Array<string | false | null | undefined>) {
 }
 
 export const inputClass =
-  "h-10 w-full rounded-xl border border-surface-container-highest bg-surface-container-lowest px-3 text-sm text-on-surface shadow-[inset_0_1px_1px_rgba(0,0,0,0.25)] outline-none transition placeholder:text-outline focus:border-primary/60 focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50";
+  "h-11 w-full rounded-xl border border-outline/60 bg-surface-container-lowest px-3 text-base text-on-surface shadow-[inset_0_1px_1px_rgba(0,0,0,0.25)] outline-none transition placeholder:text-outline focus:border-primary/60 focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50 sm:h-10 sm:text-sm";
 
 export const textareaClass =
-  "w-full rounded-xl border border-surface-container-highest bg-surface-container-lowest p-3 text-sm leading-6 text-on-surface shadow-[inset_0_1px_1px_rgba(0,0,0,0.25)] outline-none transition placeholder:text-outline focus:border-primary/60 focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50";
+  "w-full rounded-xl border border-outline/60 bg-surface-container-lowest p-3 text-base leading-6 text-on-surface shadow-[inset_0_1px_1px_rgba(0,0,0,0.25)] outline-none transition placeholder:text-outline focus:border-primary/60 focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm";
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "outline" | "danger";
 type ButtonSize = "sm" | "md" | "lg" | "icon";
@@ -36,10 +36,10 @@ const buttonVariants: Record<ButtonVariant, string> = {
 };
 
 const buttonSizes: Record<ButtonSize, string> = {
-  sm: "h-8 px-3 text-xs",
-  md: "h-10 px-4 text-sm",
+  sm: "h-11 px-3 text-xs sm:h-8",
+  md: "h-11 px-4 text-sm sm:h-10",
   lg: "h-11 px-5 text-sm",
-  icon: "h-9 w-9 p-0",
+  icon: "h-11 w-11 p-0 sm:h-9 sm:w-9",
 };
 
 export function buttonClass({

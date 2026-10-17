@@ -16,7 +16,7 @@
   --color-on-surface: #e4e1e7;
   --color-on-surface-variant: #c9c4d8;
   --color-on-background: #e4e1e7;
-  --color-outline: #938ea1;
+  --color-outline: #a09bb0;
   --color-outline-variant: #484555;
 
   --color-primary: #cabeff;
@@ -75,6 +75,19 @@ body {
 body {
   font-family: var(--font-sans);
   text-rendering: optimizeLegibility;
+}
+
+button,
+a,
+label[for] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
 }
 
 ::selection {

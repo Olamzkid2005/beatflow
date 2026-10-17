@@ -16,33 +16,8 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function NavLinks({ variant }: { variant: "header" | "sidebar" | "mobile" }) {
+export function NavLinks({ variant }: { variant: "sidebar" | "mobile" }) {
   const pathname = usePathname();
-
-  if (variant === "header") {
-    return (
-      <nav className="hidden items-center gap-1 md:flex" aria-label="Primary">
-        {items.map((item) => {
-          const active = isActive(pathname, item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "rounded-lg px-3 py-1.5 text-sm transition-colors",
-                active
-                  ? "bg-surface-container text-primary"
-                  : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface",
-              )}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
-    );
-  }
 
   if (variant === "sidebar") {
     return (
@@ -57,7 +32,7 @@ export function NavLinks({ variant }: { variant: "header" | "sidebar" | "mobile"
               className={cn(
                 "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors",
                 active
-                  ? "bg-surface-container text-primary"
+                  ? "bg-surface-container text-primary shadow-[inset_2px_0_0_var(--color-primary)]"
                   : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface",
               )}
             >
@@ -83,8 +58,10 @@ export function NavLinks({ variant }: { variant: "header" | "sidebar" | "mobile"
             href={item.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex flex-1 flex-col items-center justify-center gap-1 rounded-xl text-[10px] transition-colors",
-              active ? "text-primary" : "text-on-surface-variant hover:text-on-surface",
+              "relative flex flex-1 flex-col items-center justify-center gap-1 rounded-xl text-[10px] transition-colors",
+              active
+                ? "text-primary after:absolute after:top-0 after:h-0.5 after:w-6 after:rounded-full after:bg-primary"
+                : "text-on-surface-variant hover:text-on-surface",
             )}
           >
             <Icon name={item.icon} className="h-5 w-5" />

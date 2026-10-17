@@ -11,27 +11,6 @@ export const metadata: Metadata = {
   title: { absolute: "Connect · BeatFlow" },
 };
 
-const steps = [
-  {
-    number: "01",
-    title: "Connect",
-    body: "Sign in with the Google account that owns the channel.",
-    icon: "link" as const,
-  },
-  {
-    number: "02",
-    title: "Prepare",
-    body: "Choose the rendered MP4 and shape the release metadata.",
-    icon: "tune" as const,
-  },
-  {
-    number: "03",
-    title: "Publish",
-    body: "Upload from the browser and let YouTube handle the release.",
-    icon: "upload" as const,
-  },
-];
-
 export default async function Home() {
   const session = await auth();
   const signedIn = Boolean(session?.user);
@@ -39,7 +18,17 @@ export default async function Home() {
   const expired = Boolean(owner && session?.error);
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-surface-container-lowest text-on-surface">
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className="relative min-h-screen overflow-hidden bg-surface-container-lowest text-on-surface"
+    >
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-xl focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-on-primary"
+      >
+        Skip to content
+      </a>
       <div aria-hidden className="studio-atmosphere pointer-events-none fixed inset-0 -z-10" />
       <div aria-hidden className="studio-grid pointer-events-none fixed inset-0 -z-10 opacity-60" />
 
@@ -130,19 +119,12 @@ export default async function Home() {
             </span>
           </div>
 
-          <div className="mt-12 grid max-w-xl gap-3 sm:grid-cols-3">
-            {steps.map((step) => (
-              <div
-                key={step.number}
-                className="rounded-xl border border-outline-variant/60 bg-surface-container-low/50 p-4"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-[10px] text-primary">{step.number}</span>
-                  <Icon name={step.icon} className="h-4 w-4 text-outline" />
-                </div>
-                <p className="mt-3 text-sm font-medium">{step.title}</p>
-                <p className="mt-1 text-xs leading-5 text-on-surface-variant">{step.body}</p>
-              </div>
+          <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3 font-mono text-[10px] uppercase tracking-[0.14em] text-outline">
+            {["Browser render", "Resumable upload", "Scheduled release"].map((label) => (
+              <span key={label} className="inline-flex items-center gap-2">
+                <Icon name="check" className="h-3.5 w-3.5 text-primary" />
+                {label}
+              </span>
             ))}
           </div>
         </div>
@@ -182,9 +164,8 @@ export default async function Home() {
                 <div className="relative mt-4 flex items-start gap-2.5 rounded-xl border border-outline-variant/70 bg-surface-container-lowest/70 p-3">
                   <Icon name="info" className="mt-0.5 h-4 w-4 shrink-0 text-outline" />
                   <p className="text-xs leading-5 text-on-surface-variant">
-                    Requests <code className="font-mono text-on-surface">youtube.upload</code> and{" "}
-                    <code className="font-mono text-on-surface">youtube.readonly</code>. Tokens stay
-                    in the encrypted server session.
+                    Requests only the permissions needed to read your channel and upload a
+                    release. Google tokens stay in the encrypted server session.
                   </p>
                 </div>
               </>

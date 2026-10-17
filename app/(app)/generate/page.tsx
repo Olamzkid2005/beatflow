@@ -373,7 +373,7 @@ function UploadStudio() {
                     <Icon name={file ? "movie" : "upload"} className="h-6 w-6" />
                   </span>
                   <div>
-                    <p className="text-base font-medium">
+                    <p className="max-w-full break-all text-base font-medium">
                       {file ? file.name : "Drop your rendered MP4 here"}
                     </p>
                     <p className="mt-1 text-xs leading-5 text-on-surface-variant">
@@ -483,7 +483,11 @@ function UploadStudio() {
           ) : null}
 
           {result ? (
-            <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.06] p-4 shadow-[0_24px_70px_-40px_rgba(0,0,0,0.9)] sm:p-5">
+            <div
+              role="status"
+              aria-live="polite"
+              className="rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.06] p-4 shadow-[0_24px_70px_-40px_rgba(0,0,0,0.9)] sm:p-5"
+            >
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="flex items-start gap-3">
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-300">
@@ -519,31 +523,6 @@ function UploadStudio() {
             </div>
           ) : null}
 
-          <Card className="p-4 sm:p-5">
-            <div className="flex items-start gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-tertiary-container/15 text-tertiary">
-                <Icon name="info" className="h-4 w-4" />
-              </span>
-              <div>
-                <p className="text-sm font-medium">Before you upload</p>
-                <ul className="mt-2 space-y-1.5 text-xs leading-5 text-on-surface-variant">
-                  <li className="flex gap-2">
-                    <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-outline" />
-                    Keep this tab open until YouTube confirms the upload.
-                  </li>
-                  <li className="flex gap-2">
-                    <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-outline" />
-                    A scheduled upload stays private until the publish time.
-                  </li>
-                  <li className="flex gap-2">
-                    <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-outline" />
-                    The M0 sample is a 5-second 1080p MP4 made by{" "}
-                    <code className="font-mono text-on-surface">npm run m0:probe</code>.
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </Card>
         </div>
 
         <form id="upload-form" onSubmit={startUpload} className="flex min-w-0 flex-col gap-5">
@@ -648,7 +627,7 @@ function UploadStudio() {
                 </span>
                 <div>
                   <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-outline">
-                    Transport
+                    Upload
                   </p>
                   <h2 className="text-base font-semibold">Upload settings</h2>
                 </div>
@@ -706,6 +685,32 @@ function UploadStudio() {
               press Start upload.
             </p>
           </div>
+
+          <Card className="p-4 sm:p-5">
+            <div className="flex items-start gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-tertiary-container/15 text-tertiary">
+                <Icon name="info" className="h-4 w-4" />
+              </span>
+              <div>
+                <p className="text-sm font-medium">Before you upload</p>
+                <ul className="mt-2 space-y-1.5 text-xs leading-5 text-on-surface-variant">
+                  <li className="flex gap-2">
+                    <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-outline" />
+                    Keep this tab open until YouTube confirms the upload.
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-outline" />
+                    A scheduled upload stays private until the publish time.
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-outline" />
+                    The M0 sample is a 5-second 1080p MP4 made by{" "}
+                    <code className="font-mono text-on-surface">npm run m0:probe</code>.
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </Card>
         </form>
       </div>
     </div>
