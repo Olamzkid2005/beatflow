@@ -11,5 +11,5 @@ const { auth } = NextAuth(authConfig);
 export const proxy = auth;
 
 export const config = {
-  matcher: ["/generate/:path*", "/api/youtube/:path*"],
+  matcher: ["/generate/:path*", "/history/:path*", "/settings/:path*", "/api/youtube/:path*"],
 };

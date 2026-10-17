@@ -16,12 +16,14 @@ Single user. No multi-user support. Build order and acceptance criteria live in
 | Auth | Auth.js v5 (`next-auth@beta`) with Google OAuth, owner-only |
 | Rendering | Mediabunny + WebCodecs, in the browser (M1) |
 | Validation | zod |
-| Storage | None in v1 — MP4 held as an in-memory Blob, history in IndexedDB |
+| Storage | No server storage — MP4 held as an in-memory Blob; history and producer defaults in browser local storage |
 
 ## Current state
 
 **M0 — pipeline proof.** Owner-only Google sign-in, channel lookup, and a test upload
-that starts a resumable session on the server and PUTs the file from the browser.
+that starts a resumable session on the server and PUTs the file from the browser. The
+studio shell now includes an upload desk, local upload history, and producer defaults
+for new uploads.
 
 M1 and later are not started. See `M0-FINDINGS.md` for the section 3 and section 12
 research answers and the real-project acceptance checklist. Deployed CORS, scheduled
@@ -96,15 +98,26 @@ auth.config.ts            Google provider + optimistic owner gate
 auth.ts                   Public session projection + internal server auth/refresh
 proxy.ts                  Next 16 proxy, replaces middleware.ts
 app/
-  page.tsx                Sign-in entry point
-  generate/page.tsx       M0 test page: channel + scheduled test upload
+  page.tsx                Connect screen and owner access state
+  (app)/
+    layout.tsx            Authenticated shell + owner guard
+    generate/page.tsx     Upload desk: channel, preview, metadata, progress
+    history/page.tsx      Local upload history and filters
+    settings/page.tsx     Local producer defaults
   api/auth/[...nextauth]/route.ts
   api/youtube/channel/route.ts       channel name and avatar
   api/youtube/init-upload/route.ts   starts the resumable session
+components/
+  app-shell.tsx           Header, sidebar, mobile navigation and account controls
+  nav-links.tsx           Shared route navigation
+  ui/                     Studio primitives, icons and tag input
 lib/
   owner.ts                single-owner identity checks
   require-owner.ts        route-handler guard
   time.ts                 timezone helpers, shared by browser and server
+  history.ts              browser-local upload history
+  settings.ts             browser-local producer defaults
+  use-channel.ts          client channel fetch hook
   youtube/api.ts          YouTube fetch helpers
   youtube/metadata.ts     field validation (zod) and the videos.insert body
   youtube/uploader.ts     browser-side chunked resumable upload

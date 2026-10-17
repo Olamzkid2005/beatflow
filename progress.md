@@ -1,5 +1,15 @@
 # BeatFlow review and repair progress
 
+## Session: studio UI rebuild
+
+- Self-hosted Inter and JetBrains Mono as local variable fonts with their OFL notices; no Google Fonts request remains at build or runtime.
+- Added the shared studio shell, responsive navigation, UI primitives, and a local connect/access screen.
+- Rebuilt `/generate` around the existing M0 flow: channel state, MP4 drop zone, metadata form, schedule, 8 MiB/256 KiB chunk choice, progress, cancellation, result, and history recording.
+- Added `/history` with local-storage filters and clearing, plus `/settings` for local producer defaults (timezone, tags, starting description) used by the next upload.
+- Added the authenticated `(app)` layout and extended the proxy matcher to `/history` and `/settings`; unauthenticated requests redirect to the connect screen.
+- Verified `npm run lint`, `npx tsc --noEmit`, production build, and 29/29 tests. Production Chrome checks used a synthetic owner session and mocked channel/upload boundaries: desktop and mobile layouts have no horizontal overflow, local fonts load, settings persist and validate, history filters/clears, and a mocked upload reaches 100% with a recorded history entry. No real Google calls or uploads were made.
+- Remaining external gate: the real owner OAuth, deployed-origin CORS, quota, processing, and scheduled publication checks in `M0-FINDINGS.md`.
+
 ## Session: authorized M0 repairs
 
 - Added native Node regression runner with existing TypeScript loader; zod is now a direct runtime dependency. No new test framework/service.
