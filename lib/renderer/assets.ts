@@ -1,4 +1,4 @@
-import { TEMPLATE_FONTS, type Template } from "./template-schema";
+import { TEMPLATE_FONTS, type AnyTemplate } from "./template-schema";
 
 /** Long edge limit for background photos and logos (spec section 5 step 3). */
 export const MAX_IMAGE_EDGE = 1920;
@@ -35,7 +35,7 @@ export function resolveFontFamily(family: string): string {
  * Waits for every font a template uses. Without this the export silently falls
  * back to system fonts (spec section 5 step 3).
  */
-export async function ensureTemplateFonts(template: Template): Promise<void> {
+export async function ensureTemplateFonts(template: AnyTemplate): Promise<void> {
   if (typeof document === "undefined" || !("fonts" in document)) return;
   const loads: Promise<unknown>[] = [];
   for (const layer of template.layers) {
@@ -179,7 +179,7 @@ export async function decodeImageFile(file: File, maxEdge = MAX_IMAGE_EDGE): Pro
 }
 
 export async function loadTemplateAssets(
-  template: Template,
+  template: AnyTemplate,
   files: { background?: File; logo?: File },
 ): Promise<RenderAssets> {
   const assets: RenderAssets = {};
@@ -198,6 +198,25 @@ export async function loadTemplateAssets(
     throw error;
   }
   return assets;
+}
+
+/**
+ * A template that declares a background binding cannot render without one. A
+ * solid v2 graphic scene has no image layer, so its background is optional.
+ */
+export function assertRequiredAssets(
+  template: AnyTemplate,
+  files: { background?: File; logo?: File },
+): void {
+  const bindings = new Set(
+    template.layers.flatMap((layer) => (layer.type === "image" ? [layer.binding] : [])),
+  );
+  if (bindings.has("background_image") && !files.background) {
+    throw new Error("This template needs a background image.");
+  }
+  if (bindings.has("logo") && !files.logo) {
+    throw new Error("This template needs a logo image.");
+  }
 }
 
 /** Closes every decoded bitmap. Call once the render finishes, success or not. */

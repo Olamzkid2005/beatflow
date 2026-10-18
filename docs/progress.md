@@ -245,3 +245,67 @@ measurable locally, so they were measured instead of deferred.
 - Added `readColorTags()` to `tools/m0-probe/mp4.mjs`: a real H.264 SPS VUI parser (emulation-prevention removal, Exp-Golomb, high-profile fields, VUI colour description) plus a validated `nclx` reader. Against the bundled historical MP4 it reproduces transfer 13 / full range in both places; `tests/probe.test.mjs` pins that. `tests/color.test.mjs` pins the conversion values (0→0, 10→3, 64→48, 128→115, 200→194, 255→255, alpha untouched, input not modified).
 - `npm run fps:check` re-encodes 30 fps and now asserts the container `colr` and SPS VUI both say primaries 1 / transfer 1 / matrix 1 / limited, while Mediabunny readback reports `bt709/bt709/bt709/false`; video/audio readback and abort behavior still pass.
 - Re-verified after the encoder change: 84/84 tests, lint, TypeScript, production build, `upload:check` 25/25, `a11y:check` 0 violations. Peak memory on the same target: 30 s 1000 MiB, 3 min 1283 MiB, 5 min 1067 MiB renderer (budget 1536 MiB), five-cycle retention +4 MiB. VLC (VideoToolbox h264 decoder) played the freshly encoded 30 fps file to the end with exit 0; the only log noise was the known dummy-vout blend warning. The scene-filter frame-counting pass was not repeated.
+
+## Session: audio-reactive Orbital preset (18 October 2026)
+
+- `Orbital` is the fourth preset and the first schema-v2 template: a discriminated `graphic`
+  layer (`generator: "orbital-field"`, `recipeRevision: 1`) with a bounded box, four colours
+  and settings validated at module load. v2 also adds `requires` on text layers, so the BPM,
+  key and message labels disappear when their variable is unset. `buildOrbitalTemplate()` is
+  the only path that adds a photo variant (image plus a 62% scrim) and it re-parses the
+  result, so a missing photo never silently changes the composition.
+- The generator (`lib/renderer/graphics.ts`) draws from a fixed PRNG seeded once per prepared
+  scene, with at most 720 ring segments and 24 markers. Every frame is derived from absolute
+  track time, saved settings and sampled features — no incremental rotation or spring state —
+  so seeking to 42 s draws the frame playback would have reached. Bounds are shared by the
+  schema, the studio controls and the tests: 1–12 rings, 0–1600 particles, 15–65° tilt, 0–2
+  sensitivity, −4–4 rpm and 0–0.08 maximum pulse.
+- Analysis (`lib/renderer/audio-features.ts`, algorithm version 1) is pure numeric code:
+  48 kHz, 800-sample hops (60 Hz), full-band RMS plus broad 40–180 / 180–2000 / 2000–12000 Hz
+  bands from fixed RBJ biquads, mean channel power (opposite-phase stereo does not cancel), a
+  −60 dBFS floor and 10 ms attack / 160 ms release. Results are four `Float32Array`s with
+  implicit timestamps and the final partial hop pinned exactly at the duration.
+- `analyzeAudio()` runs that core in a bundled module Worker and transfers one second
+  (48,000 samples) of sliced channels per request, one request in flight; the decoded
+  `AudioBuffer` is never detached. A worker that never becomes ready falls back to the same
+  core on the main thread, while a numeric failure is reported as an analysis error.
+  Cancellation terminates the worker, and the studio's generation counter prevents a
+  replaced track's late result from overwriting the new one.
+- New `lib/renderer/profile.ts` derives the profile from the resolved scene: static keeps
+  1 fps / 1.8 Mbps / 15 minutes; animated is 30 fps / 3 Mbps / 5 minutes, and any other
+  requested fps on an animated scene is rejected instead of silently producing a still.
+  `checkRenderCapabilities()` now checks the selected bitrate. `encodeMp4()` gained a
+  per-frame draw hook: animated scenes redraw, convert to BT.709 and encode each frame with
+  `latencyMode: "quality"`, progress is throttled to about 200 updates, and a 192 MiB packet
+  budget plus a 16 MiB mux allowance is enforced during encoding and on the final Blob.
+- Studio: four presets as native radios. Orbital adds optional BPM (20–300), key (33
+  spellings), message and producer fields, appearance sliders, a motion toggle, sensitivity,
+  rotation and maximum-pulse sliders, and Shuffle pattern (a new seed). Analysis progress is
+  announced and Render stays blocked until it is ready; before that the canvas is explicitly
+  a still “Design preview — add audio for reactive motion”. Once ready, the native source
+  audio element drives a `requestAnimationFrame` loop that samples the cached table by
+  `currentTime` and draws through the same prepared scene as the export; pause, seek, ended
+  and metadata redraw exactly one frame, and React state is not updated per frame.
+- Verification: `npm test` **106/106** (new `tests/features.test.mjs` and
+  `tests/orbital.test.mjs`), `tsc --noEmit`, `eslint` and `next build` clean.
+- `npm run motion:check` (Chrome 155.0.8059.80, production build) passes 7/7: the still
+  preview shows no fake motion, the worker analysis unlocks the 30 fps render, a paused
+  preview reacts to energy (hash 2660247814 quiet vs 2976253781 loud) and reproduces the
+  quiet frame after seeking back, the export downloads 885,363 bytes with 180 packets at
+  30.00 fps over 6 s (H.264 + AAC, quiet and loud frames differ), the container `colr` and SPS
+  VUI both say limited-range BT.709, and cancelling during video encoding returns to the
+  cancelled state with no artifact.
+- `MEMORY_PROFILE=orbital MEMORY_MODE=quick npm run memory:check` on the same 8 GB 2013
+  MacBook Air target with the 1536 MiB renderer budget: the 30 s beat peaked at **906 MiB**
+  renderer memory (1337 MiB whole tree) and took **84.7 s**; the five 30 s render/discard
+  cycles peaked at 893, 817, 853, 873, 881 MiB with retained readings 510, 486, 490, 492,
+  493 MiB, i.e. −17 MiB from the first to the last. Analysis is included in every run.
+- `npm run text:check` now also covers Orbital's title and producer bands (the strip past
+  each box stays uniform with a 115-character title), and `npm run upload:check` still passes
+  after the picker change.
+- Open limits: 3 Mbps is provisional pending the owner's 1.8 / 3 / 4.5 Mbps visual
+  comparison; there is no saved preset/library and no explicit still export yet; BPM and key
+  are typed display metadata, not analysis results; the preview follows the media element's
+  `currentTime` and no encoder-delay offset against the decoded PCM has been measured; the
+  animated profile was measured at 30 s, not at its 5-minute cap; and the deployed-origin
+  and real-device passes remain open.

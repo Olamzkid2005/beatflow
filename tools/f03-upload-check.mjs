@@ -285,7 +285,7 @@ try {
       hints: ["video-title-hint", "render-audio-hint"].filter((id) => document.getElementById(id)),
     };
   })()`);
-  assert.equal(semantics.radios, 3, "template options must be native radio controls");
+  assert.equal(semantics.radios, 4, "template options must be native radio controls");
   assert.equal(semantics.group, true, "template picker must expose its radio group name");
   assert(semantics.titleDescribed.includes("video-title-hint"), "the title hint is not linked");
   assert(semantics.audioDescribed.includes("render-audio-hint"), "the track hint is not linked");

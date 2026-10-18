@@ -898,3 +898,52 @@ Measured/verified in Chrome **155.0.8059.80**:
 - Project suite **51/51 passed**, zero failures/skips; full lint, project TypeScript and production build passed. Final modified generator/prototype JavaScript also passed focused lint and the browser check again.
 
 These checks do not close production audit findings or certify media export, analysis Worker, track synchronization, storage, bitrate quality, peak memory, Edge or physical devices. Automated pixel checks and screenshots are not an independent aesthetic approval; owner visual review remains open. No new M0 media probe or real Google operation was necessary/performed for this asset-only/prototype change. The local preview can be started with `node tools/generate-orbital-images.mjs --serve`; it serves on loopback port 3136 and contains no auth/session/backend access.
+
+## 16. Production Orbital slice — verification (18 October 2026)
+
+Sections 12.1–12.5 are implemented as one client-side slice: the `Orbital` preset and its
+`buildOrbitalTemplate()` image variant, schema v2 with a validated `graphic` layer, the pure
+feature analyzer plus its bundled Worker, `resolveRenderProfile()`, the per-frame encode hook
+and the studio's reactive preview. Section 12.2's persistence (save preset / save as new) and
+explicit still export are **not** implemented, so gates 0 and 4 are untouched.
+
+Measured, not inferred:
+
+- `npm test` **106/106**; `npx tsc --noEmit --incremental false`, `eslint` and `next build`
+  clean. New tests cover schema rejection (unknown generator, two graphics, out-of-range
+  settings), settings clamping, deterministic seeded drawing, motion-off freezing, conditional
+  metadata, the explicit image variant, the profile rules and picker order, plus the analyzer's
+  silence floor, band selectivity, opposite-phase stereo, clipping, attack/release, chunk
+  equivalence, partial hop and interpolation.
+- `npm run motion:check` (Chrome 155.0.8059.80, production build, synthetic owner session):
+  7/7. A still design preview with no fake motion; module-Worker analysis unlocks the render;
+  the paused preview reacts to energy (hash 2660247814 quiet vs 2976253781 loud) and seeks back
+  to the same frame; the downloaded MP4 is 885,363 bytes, decodes to 180 packets at 30.00 fps
+  over 6 s with H.264 + AAC, quiet and loud exports differ, `colr` and SPS VUI are both
+  limited-range BT.709; cancelling during video encoding returns to `cancelled` with no
+  downloadable artifact.
+- `MEMORY_PROFILE=orbital MEMORY_MODE=quick npm run memory:check` on the 8 GB 2013 MacBook Air
+  target (1536 MiB renderer budget): 30 s beat → **906 MiB** peak renderer / 1337 MiB whole
+  tree, **84.7 s**; five 30 s render/discard cycles peaked at 893, 817, 853, 873, 881 MiB with
+  retained readings 510, 486, 490, 492, 493 MiB (−17 MiB first to last).
+- `npm run text:check` covers Orbital's title and producer bands with a 115-character title
+  (its metadata and message bands are covered by the Node scene tests); `upload:check` and
+  `a11y:check` still pass after the fourth preset was added to the picker.
+
+Still open against this document, and deliberately not claimed:
+
+- The gate 5 production-animation matrix needs 30 s **and 3 min and 5 min** runs on named
+  hardware; only 30 s was measured for the animated profile, so the 5-minute / 9000-frame case
+  is unmeasured. Encoder wall time is about 2.8× real time for the 30 s sample, so it is not
+  real-time.
+- The 192 MiB packet budget, the 16 MiB mux allowance and the final-Blob check are implemented
+  but no test drives a job over the cap; cancellation is proven during video encoding, not
+  during decode, analysis, assets, audio or finalize.
+- 3 Mbps is a provisional animated bitrate. The 1.8 / 3 / 4.5 Mbps visual comparison and the
+  owner's review are still required before calling it the final profile.
+- The preview samples features by the media element's `currentTime`; no encoder-delay or
+  gapless offset against the decoded PCM has been measured, and there is no decoded-buffer
+  preview fallback if a source cannot be mapped.
+- No saved presets, preset library, import/export, still export, reduced-motion default or
+  reference-capture workflow ships with this slice, and the deployed-origin and real-device
+  passes remain open.

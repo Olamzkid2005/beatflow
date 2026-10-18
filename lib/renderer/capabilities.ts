@@ -1,5 +1,6 @@
 import { canEncodeAudio, canEncodeVideo, Quality } from "mediabunny";
 
+import { STATIC_FPS, STATIC_VIDEO_BITRATE } from "./profile";
 import { normalizeFps } from "./validate";
 
 /**
@@ -10,7 +11,7 @@ import { normalizeFps } from "./validate";
 export const RENDER_VIDEO = {
   width: 1920,
   height: 1080,
-  bitrate: 1_800_000,
+  bitrate: STATIC_VIDEO_BITRATE,
   fullCodecString: "avc1.640028",
   keyFrameInterval: 2,
 } as const;
@@ -34,9 +35,10 @@ export type RenderCapabilities = {
  * successful 1 fps check.
  */
 export async function checkRenderCapabilities(
-  options: { fps?: number } = {},
+  options: { fps?: number; bitrate?: number } = {},
 ): Promise<RenderCapabilities> {
-  const fps = normalizeFps(options.fps ?? 1);
+  const fps = normalizeFps(options.fps ?? STATIC_FPS);
+  const bitrate = options.bitrate ?? RENDER_VIDEO.bitrate;
   const reasons: string[] = [];
 
   if (typeof VideoEncoder === "undefined" || typeof AudioEncoder === "undefined") {
@@ -56,7 +58,7 @@ export async function checkRenderCapabilities(
       width: RENDER_VIDEO.width,
       height: RENDER_VIDEO.height,
       frameRate: fps,
-      quality: new Quality({ bitrate: RENDER_VIDEO.bitrate }),
+      quality: new Quality({ bitrate }),
       fullCodecString: RENDER_VIDEO.fullCodecString,
     }).catch(() => false);
 

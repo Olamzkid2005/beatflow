@@ -72,6 +72,29 @@ downscaled to 1920 px before it is drawn. Verified in Chrome; still to exercise 
 deployed origin with a real track, and the Konva editor the schema was kept independent
 for is later work.
 
+**M2b — audio-reactive Orbital.** A fourth preset, `Orbital`, is the first schema-v2
+template: a bounded `orbital-field` graphic (rings, markers, stipple) that reacts to the
+track. Analysis is a pure, versioned pass over the decoded 48 kHz PCM — full-band RMS plus
+three broad bands (40–180, 180–2000, 2000–12000 Hz) at a 60 Hz hop, −60 dBFS floor, 10 ms
+attack / 160 ms release — run in a bundled module Worker one second of audio per request,
+with a main-thread fallback and a generation counter so a cancelled track cannot land
+late. The scene is a pure function of saved settings, absolute track time and sampled
+features, so seeking to 42 s draws the same frame playback would reach. The resolved
+profile is 30 fps for animated scenes (5-minute cap, 3 Mbps) and the proven 1 fps path for
+static ones; asking for a different fps on an animated scene is rejected instead of
+silently downgraded. Every frame is redrawn, converted to BT.709 and encoded with
+`latencyMode: "quality"`, with a 192 MiB packet budget plus 16 MiB mux allowance. The
+studio exposes BPM/key/message (display metadata only, never inferred), appearance sliders,
+a motion toggle and Shuffle pattern, and plays the source MP3 against a canvas driven by
+`currentTime`; before analysis finishes it shows a still design preview. Measured on the
+8 GB 2013 MacBook Air target, against a 1536 MiB renderer budget: a 30 s beat peaked at
+906 MiB renderer memory in 84.7 s, and five 30 s render/discard cycles peaked at
+893/817/853/873/881 MiB with −17 MiB retained from the first reading to the last.
+`npm run motion:check` proves the preview reacts (and reproduces on seek) and that a 6 s
+export contains 180 frames at 30 fps with BT.709/limited colour tags in both the `colr` box
+and the SPS VUI. Still open: owner review of 1.8 vs 3 vs 4.5 Mbps motion quality, saved
+presets/library, an explicit still export, and the deployed-origin pass.
+
 ## Environment variables
 
 Copy `.env.example` to `.env.local` and fill it in. All four are required:
@@ -106,8 +129,11 @@ Local checks that need Chrome and a production build:
 npm run build
 npm run a11y:check    # axe WCAG A/AA + keyboard traversal
 npm run memory:check  # 30 s, 3 min, 5 min renders + five cycles
+# MEMORY_PROFILE=orbital MEMORY_MODE=quick measures the audio-reactive 30 fps path
+# instead, with one 30 s render plus the five retention cycles
 npm run idb:check     # durability, migration, and a real two-tab replay
 npm run fps:check     # 30 fps encode/readback and abort
+npm run motion:check  # Orbital preview reaction, 30 fps export, BT.709 tags, cancel
 npm run upload:check  # production-browser upload and guard flow
 ```
 

@@ -35,10 +35,15 @@ const LUT = (() => {
 
 /**
  * Converts sRGB-encoded RGBA bytes to BT.709-encoded RGBA bytes. Alpha is
- * untouched. The input is not modified, so the caller can reuse it.
+ * untouched. By default the input is not modified, so the caller can reuse it;
+ * the animated export opts into an in-place pass because it owns each freshly
+ * read frame and converts thousands of them.
  */
-export function convertSrgbToBt709(rgba: Uint8ClampedArray): Uint8ClampedArray {
-  const converted = new Uint8ClampedArray(rgba.length);
+export function convertSrgbToBt709(
+  rgba: Uint8ClampedArray,
+  inPlace = false,
+): Uint8ClampedArray {
+  const converted = inPlace ? rgba : new Uint8ClampedArray(rgba.length);
   for (let index = 0; index < rgba.length; index += 4) {
     converted[index] = LUT[rgba[index]];
     converted[index + 1] = LUT[rgba[index + 1]];

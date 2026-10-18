@@ -24,8 +24,9 @@ import { layoutText, MAX_TEXT_LINES } from "/scene.js";
 import { FIRST_LIGHT_TEMPLATE } from "/first-light.js";
 import { PULSE_TEMPLATE } from "/pulse.js";
 import { GRID_TEMPLATE } from "/grid.js";
+import { ORBITAL_TEMPLATE } from "/orbital.js";
 
-const presets = [FIRST_LIGHT_TEMPLATE, PULSE_TEMPLATE, GRID_TEMPLATE];
+const presets = [FIRST_LIGHT_TEMPLATE, PULSE_TEMPLATE, GRID_TEMPLATE, ORBITAL_TEMPLATE];
 const samples = {
   title: [
     "Midnight Loop Extended Visualizer Version Featuring A Guest Verse And A Very Long Name That Keeps Going",
@@ -63,7 +64,11 @@ async function run() {
   const results = [];
   let failures = 0;
   for (const preset of presets) {
-    for (const layer of preset.layers.filter((item) => item.type === "text")) {
+    // Orbital's metadata and message bands hold short optional values, not a
+    // track title; they are covered by the Node scene tests instead.
+    for (const layer of preset.layers.filter(
+      (item) => item.type === "text" && !item.requires && !item.value.includes("message_text"),
+    )) {
       const role = /brand/i.test(layer.value) || layer.value.includes("producer_name") ? "brand" : "title";
       for (const text of samples[role]) {
         const layout = layoutText({
@@ -157,7 +162,17 @@ const server = createServer(async (req, res) => {
       return send("text/javascript", await transpile("lib/renderer/scene.ts", [
         ['"./assets"', '"/assets-stub.js"'],
         ['"./template-schema"', '"/schema-stub.js"'],
+        ['"./graphics"', '"/graphics-stub.js"'],
       ]));
+    }
+    if (path === "/graphics-stub.js") {
+      return send(
+        "text/javascript",
+        'export const drawOrbital = () => {};\n' +
+          'export const prepareOrbital = () => ({});\n' +
+          'export const ORBITAL_DEFAULTS = { seed: 1, ringCount: 8, particleCount: 1000, tiltDeg: 32, motion: { enabled: true, sensitivity: 1, rotationRpm: 0.75, maxPulse: 0.045 } };\n' +
+          'export const normalizeGraphicSettings = (settings) => settings;\n',
+      );
     }
     if (path === "/schema-stub.js") {
       return send(
@@ -172,10 +187,16 @@ const server = createServer(async (req, res) => {
         'export const resolveFontFamily = (family) => family === "Inter" ? "FitCheckInter" : "FitCheckMono";\n',
       );
     }
-    const template = { "/first-light.js": "first-light", "/pulse.js": "pulse", "/grid.js": "grid" }[path];
+    const template = {
+      "/first-light.js": "first-light",
+      "/pulse.js": "pulse",
+      "/grid.js": "grid",
+      "/orbital.js": "orbital",
+    }[path];
     if (template) {
       return send("text/javascript", await transpile(`lib/templates/${template}.ts`, [
         ['"@/lib/renderer/template-schema"', '"/schema-stub.js"'],
+        ['"@/lib/renderer/graphics"', '"/graphics-stub.js"'],
       ]));
     }
     if (path === "/inter.woff2" || path === "/mono.woff2") {

@@ -1,10 +1,14 @@
 import { resolveFontFamily } from "./assets";
+import type { FeatureSample } from "./audio-features";
+import { drawOrbital, prepareOrbital, type PreparedOrbital } from "./graphics";
 import {
   interpolateTemplateValue,
+  type AnyTemplate,
+  type AnyTextLayer,
+  type GraphicLayer,
   type ImageLayer,
   type RectLayer,
   type RenderVariables,
-  type Template,
   type TextLayer,
 } from "./template-schema";
 
@@ -23,6 +27,15 @@ export type TextLayout = {
   fontSize: number;
   lines: string[];
   lineHeight: number;
+};
+
+const SILENT_FEATURES: FeatureSample = { rms: 0, low: 0, mid: 0, high: 0 };
+
+/** Ephemeral per-frame values; never written back to the template or preset. */
+export type FrameContext = {
+  timeSeconds: number;
+  durationSeconds: number;
+  features?: FeatureSample;
 };
 
 function widthOf(
@@ -202,31 +215,103 @@ function drawRectLayer(ctx: DrawingContext, layer: RectLayer): void {
   }
 }
 
-function drawTextLayer(
-  ctx: DrawingContext,
-  layer: TextLayer,
-  vars: RenderVariables,
-): void {
+export type PreparedText = {
+  type: "text";
+  layer: AnyTextLayer;
+  text: string;
+  layout: TextLayout;
+};
+
+export type PreparedLayer =
+  | { type: "image"; layer: ImageLayer }
+  | { type: "rect"; layer: RectLayer }
+  | PreparedText
+  | { type: "graphic"; layer: GraphicLayer; graphic: PreparedOrbital };
+
+/**
+ * A validated scene snapshot with measured text runs and seeded graphic
+ * geometry. Preview and export both draw from this, so a frame can never be laid
+ * out differently in the two paths.
+ */
+export type PreparedScene = {
+  template: AnyTemplate;
+  assets: SceneAssets;
+  layers: PreparedLayer[];
+};
+
+function resolveLayerText(layer: AnyTextLayer, vars: RenderVariables): string | null {
+  if ("requires" in layer && layer.requires) {
+    const required = vars[layer.requires];
+    if (typeof required !== "string" || !required.trim()) return null;
+  }
   const raw = interpolateTemplateValue(layer.value, vars);
   const text = layer.uppercase ? raw.toUpperCase() : raw;
-  if (!text.trim()) return;
+  return text.trim() ? text : null;
+}
 
+function measureText(ctx: DrawingContext) {
+  return (value: string, font: string): number => {
+    ctx.font = font;
+    return ctx.measureText(value).width;
+  };
+}
+
+/**
+ * Resolves variables, measures every visible text run once and prepares the
+ * seeded graphic. Call this after fonts are loaded, with a context whose font
+ * metrics match the draw target.
+ */
+export function prepareScene(
+  ctx: DrawingContext,
+  template: AnyTemplate,
+  vars: RenderVariables,
+  assets: SceneAssets = {},
+): PreparedScene {
+  const layers: PreparedLayer[] = [];
+  const measure = measureText(ctx);
+
+  for (const layer of template.layers) {
+    if (layer.type === "image") {
+      layers.push({ type: "image", layer });
+      continue;
+    }
+    if (layer.type === "rect") {
+      layers.push({ type: "rect", layer });
+      continue;
+    }
+    if (layer.type === "graphic") {
+      layers.push({
+        type: "graphic",
+        layer,
+        graphic: prepareOrbital(layer.settings, layer.colors),
+      });
+      continue;
+    }
+
+    const text = resolveLayerText(layer, vars);
+    if (!text) continue;
+    const family = resolveFontFamily(layer.fontFamily);
+    const layout = layoutText({
+      text,
+      fontSize: layer.fontSize,
+      minFontSize: layer.minFontSize,
+      maxWidth: layer.maxWidth,
+      weight: layer.fontWeight,
+      family,
+      letterSpacing: layer.letterSpacing,
+      maxHeight: layer.maxHeight,
+      lineHeight: layer.lineHeight,
+      measure,
+    });
+    layers.push({ type: "text", layer, text, layout });
+  }
+
+  return { template, assets, layers };
+}
+
+function drawPreparedText(ctx: DrawingContext, prepared: PreparedText): void {
+  const { layer, layout } = prepared;
   const family = resolveFontFamily(layer.fontFamily);
-  const layout = layoutText({
-    text,
-    fontSize: layer.fontSize,
-    minFontSize: layer.minFontSize,
-    maxWidth: layer.maxWidth,
-    weight: layer.fontWeight,
-    family,
-    letterSpacing: layer.letterSpacing,
-    maxHeight: layer.maxHeight,
-    lineHeight: layer.lineHeight,
-    measure: (value, font) => {
-      ctx.font = font;
-      return ctx.measureText(value).width;
-    },
-  });
 
   ctx.globalAlpha = 1;
   ctx.font = `${layer.fontWeight} ${layout.fontSize}px ${family}`;
@@ -268,27 +353,53 @@ function drawTextLayer(
 }
 
 /**
- * Draws one full frame. Shared by the live preview and the export so they can
- * never drift apart.
+ * Draws one complete frame in z-order. `frame` is optional for static scenes;
+ * a graphic without it renders its design frame at time zero.
  */
-export function drawScene(
+export function drawPreparedScene(
   ctx: DrawingContext,
-  template: Template,
-  vars: RenderVariables,
-  assets: SceneAssets,
+  prepared: PreparedScene,
+  frame?: FrameContext,
 ): void {
-  const { width, height, backgroundColor } = template.canvas;
+  const { width, height, backgroundColor } = prepared.template.canvas;
   ctx.save();
   ctx.globalAlpha = 1;
   ctx.fillStyle = backgroundColor;
   ctx.fillRect(0, 0, width, height);
 
-  for (const layer of template.layers) {
+  for (const layer of prepared.layers) {
     ctx.save();
-    if (layer.type === "image") drawImageLayer(ctx, layer, assets, width, height);
-    else if (layer.type === "rect") drawRectLayer(ctx, layer);
-    else drawTextLayer(ctx, layer, vars);
+    if (layer.type === "image") {
+      drawImageLayer(ctx, layer.layer, prepared.assets, width, height);
+    } else if (layer.type === "rect") {
+      drawRectLayer(ctx, layer.layer);
+    } else if (layer.type === "text") {
+      drawPreparedText(ctx, layer);
+    } else {
+      drawOrbital(ctx, layer.graphic, layer.layer.box, {
+        timeSeconds: frame?.timeSeconds ?? 0,
+        durationSeconds: frame?.durationSeconds ?? 0,
+        features: frame?.features ?? SILENT_FEATURES,
+      });
+    }
     ctx.restore();
   }
   ctx.restore();
 }
+
+/**
+ * Draws one full frame. Shared by the live preview and the export so they can
+ * never drift apart.
+ */
+export function drawScene(
+  ctx: DrawingContext,
+  template: AnyTemplate,
+  vars: RenderVariables,
+  assets: SceneAssets,
+  frame?: FrameContext,
+): void {
+  drawPreparedScene(ctx, prepareScene(ctx, template, vars, assets), frame);
+}
+
+/** Kept for callers that only need the static v1 text drawing type. */
+export type DrawableTextLayer = TextLayer;

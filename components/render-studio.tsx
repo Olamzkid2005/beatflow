@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "@/components/ui/icon";
 import {
@@ -12,10 +12,17 @@ import {
   Field,
   Input,
   Progress,
+  Select,
   StatusDot,
 } from "@/components/ui/primitives";
+import type { AnalysisMode } from "@/lib/renderer/audio-analysis";
+import type { AudioFeatureTable } from "@/lib/renderer/audio-features";
+import type { DecodedAudio } from "@/lib/renderer/audio";
+import type { GraphicSettings } from "@/lib/renderer/graphics";
+import { ORBITAL_BOUNDS, ORBITAL_DEFAULTS } from "@/lib/renderer/graphics";
+import type { PreparedScene } from "@/lib/renderer/scene";
 import type { RenderCapabilities, RenderProgress } from "@/lib/renderer";
-import { DEFAULT_TEMPLATE_ID, TEMPLATE_PRESETS } from "@/lib/templates";
+import { DEFAULT_TEMPLATE_ID, ORBITAL_TEMPLATE_ID, TEMPLATE_PRESETS, MUSICAL_KEYS, buildOrbitalTemplate } from "@/lib/templates";
 import { useBeforeUnloadWarning } from "@/lib/use-before-unload";
 import { useNavigationGuard } from "@/lib/use-navigation-guard";
 
@@ -27,6 +34,12 @@ type RenderResult = {
   name: string;
   /** Identifies the render that owns the upload handoff. */
   artifactId: string;
+};
+
+type AnalysisState = {
+  status: "idle" | "analyzing" | "ready" | "error";
+  mode?: AnalysisMode;
+  message?: string;
 };
 
 function trackNameFromFileName(name: string): string {
@@ -52,6 +65,8 @@ function stageLabel(stage: RenderProgress["stage"]): string {
       return "Checking browser support";
     case "decode":
       return "Decoding audio";
+    case "analyze":
+      return "Analyzing the track";
     case "assets":
       return "Loading artwork and fonts";
     case "video":
@@ -61,6 +76,51 @@ function stageLabel(stage: RenderProgress["stage"]): string {
     case "finalize":
       return "Finalizing MP4";
   }
+}
+
+/** Native range control with a visible value, used by the Orbital appearance and motion controls. */
+function RangeControl({
+  id,
+  label,
+  value,
+  min,
+  max,
+  step,
+  disabled,
+  display,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  disabled: boolean;
+  display: string;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-2">
+        <label htmlFor={id} className="text-[11px] font-medium uppercase tracking-[0.14em] text-on-surface-variant">
+          {label}
+        </label>
+        <span className="font-mono text-[11px] text-outline">{display}</span>
+      </div>
+      <input
+        id={id}
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="mt-1.5 w-full accent-[var(--color-primary)] disabled:opacity-50"
+      />
+    </div>
+  );
 }
 
 export function RenderStudio({
@@ -85,14 +145,55 @@ export function RenderStudio({
   const [error, setError] = useState<string | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const [capabilities, setCapabilities] = useState<RenderCapabilities | null>(null);
+  const [imageVersion, setImageVersion] = useState(0);
+
+  // Orbital audio-reactive settings. These are part of the scene, not the
+  // release content, so analysis is reused when only appearance changes.
+  const [graphicSettings, setGraphicSettings] = useState<GraphicSettings>(ORBITAL_DEFAULTS);
+  const [bpm, setBpm] = useState("");
+  const [key, setKey] = useState("");
+  const [message, setMessage] = useState("");
+  const [analysis, setAnalysis] = useState<AnalysisState>({ status: "idle" });
+  const [analysisPct, setAnalysisPct] = useState(0);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const audioUrlRef = useRef<string | null>(null);
   const bitmapRef = useRef<{ file: File; bitmap: ImageBitmap } | null>(null);
   const resultUrlRef = useRef<string | null>(null);
   const resultBlobRef = useRef<Blob | null>(null);
   const trackNameTouchedRef = useRef(false);
+
+  const preparedRef = useRef<PreparedScene | null>(null);
+  const rendererRef = useRef<typeof import("@/lib/renderer") | null>(null);
+  const decodedRef = useRef<DecodedAudio | null>(null);
+  const featuresRef = useRef<AudioFeatureTable | null>(null);
+  const analysisAbortRef = useRef<AbortController | null>(null);
+  const analysisGenerationRef = useRef(0);
+  const animationFrameRef = useRef<number | null>(null);
+
+  const preset = TEMPLATE_PRESETS.find((option) => option.id === presetId) ?? TEMPLATE_PRESETS[0];
+  const animated = preset.id === ORBITAL_TEMPLATE_ID;
+
+  // The animated scene is rebuilt from its settings; text boxes stay fixed.
+  const template = useMemo(
+    () =>
+      animated
+        ? buildOrbitalTemplate(graphicSettings, { withImage: Boolean(imageFile) })
+        : preset.template,
+    [animated, preset.template, graphicSettings, imageFile],
+  );
+
+  // Without an animated selection and a track there is nothing to analyze, so
+  // the idle state is derived rather than written back from an effect.
+  const analysisState: AnalysisState = animated && audioFile ? analysis : { status: "idle" };
+
+  const bpmValid =
+    bpm.trim() === "" ||
+    (Number.isFinite(Number(bpm)) && Number(bpm) >= 20 && Number(bpm) <= 300);
+  const bpmValue = bpmValid && bpm.trim() !== "" ? bpm.trim() : undefined;
+  const needsImage = template.layers.some((layer) => layer.type === "image");
 
   // Capability check at startup (spec section 5 step 1).
   useEffect(() => {
@@ -112,40 +213,154 @@ export function RenderStudio({
     };
   }, []);
 
-  // The decoded bitmap lives in a ref, so editing text redraws without
-  // re-decoding the photo (memory rule in section 5).
-  const drawPreviewRef = useRef<() => Promise<void>>(async () => {});
+  const stopAnimation = useCallback(() => {
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+  }, []);
 
-  // The preset is snapshotted here, so switching it mid-render cannot change
-  // the frames an in-flight export already produced (spec section 6).
-  const preset = TEMPLATE_PRESETS.find((option) => option.id === presetId) ?? TEMPLATE_PRESETS[0];
-  const template = preset.template;
+  // Draws the frame for the media's current time. Reads refs only, so it never
+  // updates React state per animation frame.
+  const drawCurrentFrame = useCallback(() => {
+    const renderer = rendererRef.current;
+    const prepared = preparedRef.current;
+    const canvas = canvasRef.current;
+    if (!renderer || !prepared || !canvas) return;
+    const time = audioElementRef.current?.currentTime ?? 0;
+    const table = featuresRef.current;
+    renderer.drawPreparedFrame(canvas, prepared, {
+      timeSeconds: time,
+      durationSeconds: decodedRef.current?.duration ?? 0,
+      features: table ? renderer.sampleFeatures(table, time) : undefined,
+    });
+  }, []);
 
-  // Live preview: same drawScene the export uses, no encoding (spec section 5).
+  const startAnimation = useCallback(() => {
+    stopAnimation();
+    const step = () => {
+      drawCurrentFrame();
+      animationFrameRef.current = requestAnimationFrame(step);
+    };
+    animationFrameRef.current = requestAnimationFrame(step);
+  }, [drawCurrentFrame, stopAnimation]);
+
+  // Decode and analyze the selected track once per animated selection. The
+  // same decoded buffer and feature table are handed to the export, so the
+  // track is never decoded twice.
   useEffect(() => {
-    drawPreviewRef.current = async () => {
+    if (!animated || !audioFile) {
+      analysisAbortRef.current?.abort();
+      analysisAbortRef.current = null;
+      analysisGenerationRef.current += 1;
+      decodedRef.current = null;
+      featuresRef.current = null;
+      drawCurrentFrame();
+      return;
+    }
+
+    const generation = analysisGenerationRef.current + 1;
+    analysisGenerationRef.current = generation;
+    const controller = new AbortController();
+    analysisAbortRef.current?.abort();
+    analysisAbortRef.current = controller;
+    let cancelled = false;
+
+    void (async () => {
       const renderer = await import("@/lib/renderer");
+      if (cancelled || generation !== analysisGenerationRef.current) return;
+      setAnalysis({ status: "analyzing" });
+      setAnalysisPct(0);
+      const decoded = await renderer.decodeAudioFile(audioFile, renderer.ANIMATED_MAX_SECONDS);
+      if (cancelled || generation !== analysisGenerationRef.current) return;
+      const result = await renderer.analyzeAudio(decoded.buffer, {
+        signal: controller.signal,
+        onProgress: (pct) => {
+          if (!cancelled && generation === analysisGenerationRef.current) setAnalysisPct(pct);
+        },
+      });
+      if (cancelled || generation !== analysisGenerationRef.current) return;
+      decodedRef.current = decoded;
+      featuresRef.current = result.table;
+      setAnalysis({ status: "ready", mode: result.mode });
+      setAnalysisPct(1);
+      drawCurrentFrame();
+    })().catch((reason) => {
+      if (cancelled || generation !== analysisGenerationRef.current) return;
+      if (reason instanceof Error && reason.name === "AbortError") return;
+      decodedRef.current = null;
+      featuresRef.current = null;
+      setAnalysis({
+        status: "error",
+        message: reason instanceof Error ? reason.message : "The track could not be analyzed.",
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [animated, audioFile, drawCurrentFrame]);
+
+  // The preset is snapshotted into a prepared scene once per content/appearance
+  // snapshot: measured text runs and seeded graphic geometry, shared by preview
+  // and export.
+  useEffect(() => {
+    let cancelled = false;
+    preparedRef.current = null;
+    void (async () => {
+      const renderer = await import("@/lib/renderer");
+      if (cancelled) return;
       await renderer.ensureTemplateFonts(template);
       const canvas = canvasRef.current;
-      if (!canvas) return;
-      renderer.previewFrame(
-        canvas,
+      if (cancelled || !canvas) return;
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      const prepared = renderer.prepareScene(
+        context,
         template,
         {
           track_name: trackName || "Track title",
           producer_name: producerName,
           filename: audioFile?.name ?? "",
+          message_text: message.trim() || undefined,
+          bpm: bpmValue,
+          key: key || undefined,
         },
         { background: bitmapRef.current?.bitmap },
       );
+      if (cancelled) return;
+      rendererRef.current = renderer;
+      preparedRef.current = prepared;
+      drawCurrentFrame();
+    })().catch((reason) => {
+      if (!cancelled) {
+        setError(
+          reason instanceof Error ? reason.message : "The preview could not be prepared.",
+        );
+      }
+    });
+    return () => {
+      cancelled = true;
     };
-    drawPreviewRef.current().catch(() => {});
-  }, [template, trackName, producerName, audioFile]);
+  }, [
+    template,
+    trackName,
+    producerName,
+    audioFile,
+    bpmValue,
+    key,
+    message,
+    imageVersion,
+    analysis.status,
+    drawCurrentFrame,
+  ]);
 
   // The preview pairs the canvas with the original MP3 (spec section 5). The
   // object URL is created when the file is chosen, replaced when it changes,
   // and revoked on unmount, so no preview URL outlives its file.
   function selectAudioFile(file: File | null) {
+    stopAnimation();
     if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
     audioUrlRef.current = file ? URL.createObjectURL(file) : null;
     setAudioUrl(audioUrlRef.current);
@@ -162,15 +377,16 @@ export function RenderStudio({
 
   // Decode the background once per file and reuse it (memory rule in section 5).
   useEffect(() => {
-    if (!imageFile) {
-      bitmapRef.current?.bitmap.close();
-      bitmapRef.current = null;
-      drawPreviewRef.current().catch(() => {});
-      return;
-    }
     let cancelled = false;
-    import("@/lib/renderer")
-      .then(async (renderer) => {
+    void (async () => {
+      if (!imageFile) {
+        bitmapRef.current?.bitmap.close();
+        bitmapRef.current = null;
+        if (!cancelled) setImageVersion((value) => value + 1);
+        return;
+      }
+      try {
+        const renderer = await import("@/lib/renderer");
         const bitmap = await renderer.decodeImageFile(imageFile);
         if (cancelled) {
           bitmap.close();
@@ -179,16 +395,16 @@ export function RenderStudio({
         bitmapRef.current?.bitmap.close();
         bitmapRef.current = { file: imageFile, bitmap };
         setImageError(null);
-        await drawPreviewRef.current();
-      })
-      .catch((reason) => {
+        setImageVersion((value) => value + 1);
+      } catch (reason) {
         if (!cancelled) {
           // A photo that cannot be decoded must block the render, not fail it later.
           setImageError(
             reason instanceof Error ? reason.message : "Could not read that image. Try a PNG or JPEG.",
           );
         }
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -197,7 +413,10 @@ export function RenderStudio({
   // Release everything this component created when it unmounts.
   useEffect(
     () => () => {
+      stopAnimation();
       abortRef.current?.abort();
+      analysisAbortRef.current?.abort();
+      analysisGenerationRef.current += 1;
       bitmapRef.current?.bitmap.close();
       bitmapRef.current = null;
       resultBlobRef.current = null;
@@ -206,7 +425,7 @@ export function RenderStudio({
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
       audioUrlRef.current = null;
     },
-    [],
+    [stopAnimation],
   );
 
   /** Releases the rendered MP4 without touching anything the user downloaded. */
@@ -223,13 +442,45 @@ export function RenderStudio({
     setPhase("idle");
   }
 
+  function updateGraphicSettings(patch: Partial<GraphicSettings>) {
+    setGraphicSettings((current) => ({ ...current, ...patch }));
+  }
+
+  function updateMotion(patch: Partial<GraphicSettings["motion"]>) {
+    setGraphicSettings((current) => ({ ...current, motion: { ...current.motion, ...patch } }));
+  }
+
+  function shufflePattern() {
+    const seed =
+      typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function"
+        ? crypto.getRandomValues(new Uint32Array(1))[0]
+        : Math.floor(Math.random() * 0xffffffff);
+    updateGraphicSettings({ seed });
+  }
+
   async function handleRender() {
-    if (uploading || !audioFile || !imageFile || phase === "rendering") return;
+    if (uploading || !audioFile || phase === "rendering") return;
     if (capabilities && !capabilities.supported) {
       setError(capabilities.reasons.join(" "));
       return;
     }
     if (imageError) return;
+    if (needsImage && !imageFile) {
+      setError("This template needs a background image. Choose a photo or switch to Orbital.");
+      return;
+    }
+    if (!bpmValid) {
+      setError("BPM must be between 20 and 300, or left empty.");
+      return;
+    }
+    if (animated && analysisState.status !== "ready") {
+      setError(
+        analysisState.status === "analyzing"
+          ? "The track is still being analyzed. Rendering starts once analysis finishes."
+          : "Add an MP3 and wait for the track analysis before rendering Orbital.",
+      );
+      return;
+    }
     // Hold on to a finished render until the user agrees to replace it.
     if (result && !window.confirm("Start a new render and release the current MP4?")) return;
 
@@ -244,6 +495,7 @@ export function RenderStudio({
     setError(null);
     setProgress({ stage: "capabilities", pct: 0 });
     setPhase("rendering");
+    stopAnimation();
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -254,15 +506,24 @@ export function RenderStudio({
       const blob = await renderer.renderVideo(
         {
           audio: audioFile,
-          background: imageFile,
+          background: imageFile ?? undefined,
           template,
           vars: {
             track_name: resolvedName,
             producer_name: producerName,
             filename: audioFile.name,
+            message_text: message.trim() || undefined,
+            bpm: bpmValue,
+            key: key || undefined,
           },
         },
-        { signal: controller.signal, onProgress: setProgress },
+        {
+          fps: animated ? renderer.ANIMATED_FPS : undefined,
+          decodedAudio: animated ? (decodedRef.current ?? undefined) : undefined,
+          features: animated ? (featuresRef.current ?? undefined) : undefined,
+          signal: controller.signal,
+          onProgress: setProgress,
+        },
       );
       controller.signal.throwIfAborted();
 
@@ -299,6 +560,7 @@ export function RenderStudio({
   const rendering = phase === "rendering";
   const locked = rendering || uploading;
   const unsupported = capabilities !== null && !capabilities.supported;
+  const settingsLocked = locked;
   useBeforeUnloadWarning(rendering);
   useNavigationGuard(
     rendering,
@@ -322,7 +584,7 @@ export function RenderStudio({
         </div>
         <Badge tone={unsupported ? "danger" : "primary"}>
           <StatusDot tone={unsupported ? "danger" : "primary"} />
-          {unsupported ? "Renderer unavailable" : "M2 · Template engine"}
+          {unsupported ? "Renderer unavailable" : animated ? "M2 · Audio-reactive" : "M2 · Template engine"}
         </Badge>
       </div>
 
@@ -339,17 +601,44 @@ export function RenderStudio({
           </div>
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-outline">
             Preview · {template.name} template · {template.canvas.width} × {template.canvas.height}
+            {animated ? " · 30 fps" : ""}
           </p>
+          {animated && analysisState.status !== "ready" ? (
+            <p className="rounded-lg border border-outline-variant/70 bg-surface-container-lowest/70 px-3 py-2 text-xs leading-5 text-on-surface-variant">
+              {analysisState.status === "analyzing"
+                ? `Analyzing the track — ${Math.round(analysisPct * 100)}%. The design is shown still until analysis finishes.`
+                : analysisState.status === "error"
+                  ? "The track could not be analyzed. Choose another MP3 to unlock the 30 fps render."
+                  : "Design preview — add audio for reactive motion."}
+            </p>
+          ) : null}
 
           {audioUrl ? (
             <div className="flex flex-col gap-1.5 rounded-xl border border-outline-variant/70 bg-surface-container-lowest/70 px-3 py-2.5">
               <audio
                 key={audioUrl}
+                ref={audioElementRef}
                 src={audioUrl}
                 controls
                 preload="metadata"
                 aria-label={`Preview source audio: ${audioFile?.name ?? "track"}`}
                 className="w-full"
+                onPlay={() => {
+                  if (animated) startAnimation();
+                }}
+                onPause={() => {
+                  stopAnimation();
+                  drawCurrentFrame();
+                }}
+                onEnded={() => {
+                  stopAnimation();
+                  drawCurrentFrame();
+                }}
+                onSeeked={drawCurrentFrame}
+                onLoadedMetadata={drawCurrentFrame}
+                onTimeUpdate={() => {
+                  if (audioElementRef.current?.paused) drawCurrentFrame();
+                }}
               />
               <p className="truncate font-mono text-[10px] uppercase tracking-[0.14em] text-outline">
                 Source audio · {audioFile?.name ?? "track"}
@@ -452,7 +741,10 @@ export function RenderStudio({
                       value={option.id}
                       checked={selected}
                       disabled={locked}
-                      onChange={() => setPresetId(option.id)}
+                      onChange={() => {
+                        stopAnimation();
+                        setPresetId(option.id);
+                      }}
                       className="sr-only"
                     />
                     <span className="flex items-center gap-2 text-sm font-medium">
@@ -468,11 +760,11 @@ export function RenderStudio({
             </div>
           </div>
 
-          <Field label="Track MP3" htmlFor="render-audio" hint="max 15 min">
+          <Field label="Track MP3" htmlFor="render-audio" hint={animated ? "max 5 min for Orbital" : "max 15 min"}>
             <Input
               id="render-audio"
               type="file"
-              accept=".mp3,audio/mpeg"
+              accept=".mp3,audio/mpeg,.wav,audio/wav"
               disabled={locked}
               onChange={(event) => {
                 selectAudioFile(event.target.files?.[0] ?? null);
@@ -480,7 +772,11 @@ export function RenderStudio({
             />
           </Field>
 
-          <Field label="Background image" htmlFor="render-image" hint="downscaled to 1920 px">
+          <Field
+            label={needsImage ? "Background image" : "Background image (optional)"}
+            htmlFor="render-image"
+            hint={needsImage ? "downscaled to 1920 px" : "adds a photo behind the graphic"}
+          >
             <Input
               id="render-image"
               type="file"
@@ -512,15 +808,181 @@ export function RenderStudio({
             />
           </Field>
 
+          {animated ? (
+            <div className="flex flex-col gap-4 rounded-xl border border-outline-variant/70 bg-surface-container-lowest/60 p-3">
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="BPM" htmlFor="render-bpm" hint="20–300, optional">
+                  <Input
+                    id="render-bpm"
+                    inputMode="decimal"
+                    value={bpm}
+                    disabled={locked}
+                    placeholder="128"
+                    aria-invalid={!bpmValid}
+                    onChange={(event) => setBpm(event.target.value)}
+                  />
+                </Field>
+                <Field label="Key" htmlFor="render-key" hint="optional">
+                  <Select
+                    id="render-key"
+                    value={key}
+                    disabled={locked}
+                    onChange={(event) => setKey(event.target.value)}
+                  >
+                    <option value="">Not set</option>
+                    {MUSICAL_KEYS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+              {!bpmValid ? (
+                <p role="alert" className="text-xs leading-5 text-error">
+                  BPM must be between 20 and 300, or empty.
+                </p>
+              ) : null}
+
+              <Field label="Message" htmlFor="render-message" hint="optional, up to 500 characters">
+                <Input
+                  id="render-message"
+                  value={message}
+                  maxLength={500}
+                  disabled={locked}
+                  placeholder="Purchase This Track For Commercial Use"
+                  onChange={(event) => setMessage(event.target.value)}
+                />
+              </Field>
+
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-on-surface-variant">
+                  Appearance
+                </span>
+                <Button variant="ghost" size="sm" onClick={shufflePattern} disabled={settingsLocked}>
+                  <Icon name="spark" className="h-3.5 w-3.5" />
+                  Shuffle pattern
+                </Button>
+              </div>
+
+              <RangeControl
+                id="orbital-rings"
+                label="Rings"
+                value={graphicSettings.ringCount}
+                min={ORBITAL_BOUNDS.ringCount.min}
+                max={ORBITAL_BOUNDS.ringCount.max}
+                step={1}
+                disabled={settingsLocked}
+                display={String(graphicSettings.ringCount)}
+                onChange={(value) => updateGraphicSettings({ ringCount: value })}
+              />
+              <RangeControl
+                id="orbital-particles"
+                label="Particles"
+                value={graphicSettings.particleCount}
+                min={ORBITAL_BOUNDS.particleCount.min}
+                max={ORBITAL_BOUNDS.particleCount.max}
+                step={50}
+                disabled={settingsLocked}
+                display={String(graphicSettings.particleCount)}
+                onChange={(value) => updateGraphicSettings({ particleCount: value })}
+              />
+              <RangeControl
+                id="orbital-tilt"
+                label="Tilt"
+                value={graphicSettings.tiltDeg}
+                min={ORBITAL_BOUNDS.tiltDeg.min}
+                max={ORBITAL_BOUNDS.tiltDeg.max}
+                step={1}
+                disabled={settingsLocked}
+                display={`${graphicSettings.tiltDeg}°`}
+                onChange={(value) => updateGraphicSettings({ tiltDeg: value })}
+              />
+
+              <div className="flex items-center justify-between gap-2 border-t border-outline-variant/60 pt-3">
+                <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-on-surface-variant">
+                  Motion
+                </span>
+                <label className="flex items-center gap-2 text-xs text-on-surface-variant">
+                  <input
+                    type="checkbox"
+                    checked={graphicSettings.motion.enabled}
+                    disabled={settingsLocked}
+                    onChange={(event) => updateMotion({ enabled: event.target.checked })}
+                    className="h-4 w-4 accent-[var(--color-primary)]"
+                  />
+                  React to audio
+                </label>
+              </div>
+              <RangeControl
+                id="orbital-sensitivity"
+                label="Sensitivity"
+                value={graphicSettings.motion.sensitivity}
+                min={ORBITAL_BOUNDS.sensitivity.min}
+                max={ORBITAL_BOUNDS.sensitivity.max}
+                step={0.05}
+                disabled={settingsLocked || !graphicSettings.motion.enabled}
+                display={graphicSettings.motion.sensitivity.toFixed(2)}
+                onChange={(value) => updateMotion({ sensitivity: value })}
+              />
+              <RangeControl
+                id="orbital-rotation"
+                label="Rotation"
+                value={graphicSettings.motion.rotationRpm}
+                min={ORBITAL_BOUNDS.rotationRpm.min}
+                max={ORBITAL_BOUNDS.rotationRpm.max}
+                step={0.25}
+                disabled={settingsLocked || !graphicSettings.motion.enabled}
+                display={`${graphicSettings.motion.rotationRpm} rpm`}
+                onChange={(value) => updateMotion({ rotationRpm: value })}
+              />
+              <RangeControl
+                id="orbital-pulse"
+                label="Max pulse"
+                value={graphicSettings.motion.maxPulse}
+                min={ORBITAL_BOUNDS.maxPulse.min}
+                max={ORBITAL_BOUNDS.maxPulse.max}
+                step={0.005}
+                disabled={settingsLocked || !graphicSettings.motion.enabled}
+                display={graphicSettings.motion.maxPulse.toFixed(3)}
+                onChange={(value) => updateMotion({ maxPulse: value })}
+              />
+
+              <p
+                className="text-xs leading-5 text-on-surface-variant"
+                role="status"
+                aria-live="polite"
+              >
+                {analysisState.status === "ready"
+                  ? `Track analyzed ${analysis.mode === "worker" ? "in a background worker" : "on this tab"}. Preview follows the source audio.`
+                  : analysisState.status === "analyzing"
+                    ? `Analyzing the track — ${Math.round(analysisPct * 100)}%.`
+                    : analysisState.status === "error"
+                      ? (analysisState.message ?? "The track could not be analyzed.")
+                      : "Add an MP3 to analyze the track and unlock reactive motion."}
+              </p>
+            </div>
+          ) : null}
+
           <div className="flex flex-wrap items-center gap-2">
             <Button
               onClick={handleRender}
               disabled={
-                !audioFile || !imageFile || locked || unsupported || Boolean(imageError)
+                !audioFile ||
+                (needsImage && !imageFile) ||
+                locked ||
+                unsupported ||
+                Boolean(imageError) ||
+                !bpmValid ||
+                (animated && analysisState.status !== "ready")
               }
             >
               <Icon name="spark" className="h-4 w-4" />
-              {rendering ? "Rendering…" : "Render MP4"}
+              {rendering
+                ? "Rendering…"
+                : animated
+                  ? "Render MP4 · 30 fps"
+                  : "Render MP4"}
             </Button>
             {uploading ? (
               <span className="text-xs leading-5 text-on-surface-variant">
@@ -547,8 +1009,9 @@ export function RenderStudio({
           ) : null}
 
           <p className="text-xs leading-5 text-on-surface-variant">
-            The MP4 stays in memory until the next render. Cancel releases it; nothing is
-            uploaded by rendering.
+            {animated
+              ? "Orbital renders at 30 fps and stays inside a 5-minute limit. The MP4 is held in memory until the next render; nothing is uploaded by rendering."
+              : "The MP4 stays in memory until the next render. Cancel releases it; nothing is uploaded by rendering."}
           </p>
         </div>
       </div>

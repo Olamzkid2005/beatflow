@@ -17,6 +17,7 @@
     "fps:check": "node tools/fps-readback-check.mjs",
     "a11y:check": "node tools/a11y-check.mjs",
     "memory:check": "node tools/memory-check.mjs",
+    "motion:check": "node tools/motion-check.mjs",
     "upload:check": "node tools/f03-upload-check.mjs"
   },
   "dependencies": {

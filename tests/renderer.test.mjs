@@ -30,6 +30,7 @@ const KNOWN_VARIABLES = new Set([
   "track_name",
   "filename",
   "producer_name",
+  "message_text",
   "bpm",
   "key",
   "year",

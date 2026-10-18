@@ -1,4 +1,4 @@
-import { parseTemplate, type RenderVariables, type Template } from "./template-schema";
+import { parseTemplate, type AnyTemplate, type RenderVariables } from "./template-schema";
 
 /** Supported export frame rates. 1 fps remains the static default. */
 export const MIN_FPS = 1;
@@ -37,7 +37,7 @@ export function assertExportCanvas(canvas: { width: number; height: number }): v
 }
 
 export type RenderSnapshot = {
-  template: Template;
+  template: AnyTemplate;
   vars: RenderVariables;
 };
 

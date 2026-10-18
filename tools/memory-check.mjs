@@ -314,6 +314,19 @@ try {
   await send("Page.navigate", { url: `${origin}/generate` });
   await waitFor("document.readyState === 'complete'");
   await waitFor("document.querySelector('#render-audio') !== null");
+
+  // MEMORY_PROFILE=orbital measures the 30 fps audio-reactive path instead of
+  // the static one, including decode + worker analysis per track.
+  const orbital = process.env.MEMORY_PROFILE === "orbital";
+  if (orbital) {
+    await evaluate("document.querySelector('input[value=\"orbital\"]').click()");
+    await waitFor("document.querySelector('#orbital-rings') !== null");
+  }
+  const waitForAnalysis = async () => {
+    if (!orbital) return;
+    await waitFor("document.body.innerText.includes('Track analyzed')", 300_000);
+  };
+  const renderLabel = orbital ? "Render MP4 · 30 fps" : "Render MP4";
   const imageSize = await evaluate(`(async () => {
     const blob = await (await fetch("/images/orbital/background-obsidian.jpg")).blob();
     const input = document.querySelector("#render-image");
@@ -332,13 +345,14 @@ try {
     const audioBytes = await pickAudio(seconds);
     assert(audioBytes > 0);
     await waitFor("document.querySelector('#render-track-name')?.value.length > 0");
+    await waitForAnalysis();
     const baseline = readTree();
     const stop = startSampler();
     const started = Date.now();
-    await clickText("button", "Render MP4");
+    await clickText("button", renderLabel);
     await waitFor(
       "[...document.querySelectorAll('button')].some((b) => b.textContent.includes('Use for upload') && !b.disabled)",
-      300_000,
+      orbital ? 900_000 : 300_000,
     );
     const elapsed = (Date.now() - started) / 1000;
     const peak = stop();
@@ -367,13 +381,14 @@ try {
   // Retention: five render/discard cycles without reloading the page.
   await pickAudio(30);
   await waitFor("document.querySelector('#render-track-name')?.value.length > 0");
+  await waitForAnalysis();
   const cycleRetained = [];
   for (let cycle = 1; cycle <= 5; cycle++) {
     const stop = startSampler();
-    await clickText("button", "Render MP4");
+    await clickText("button", renderLabel);
     await waitFor(
       "[...document.querySelectorAll('button')].some((b) => b.textContent.includes('Use for upload') && !b.disabled)",
-      300_000,
+      orbital ? 900_000 : 300_000,
     );
     const peak = stop();
     assert(
@@ -398,7 +413,8 @@ try {
   const browser = await send("Browser.getVersion");
   console.log(
     `\nMEMORY PASS — ${browser.product}, 8 GB 2013 MacBook Air, budget ${BUDGET_MIB} MiB renderer\n` +
-      `  measured ${measurements.map((m) => `${m.seconds}s/${m.peak.renderer.toFixed(0)} MiB`).join(", ")}\n` +
+      `  profile ${orbital ? "orbital 30 fps" : "static 1 fps"}\n` +
+      `  measured ${measurements.map((m) => `${m.seconds}s/${m.peak.renderer.toFixed(0)} MiB/${m.elapsed.toFixed(1)}s`).join(", ")}\n` +
       `  five-cycle retention growth ${growth.toFixed(0)} MiB (limit 150 MiB)`,
   );
 } catch (error) {
