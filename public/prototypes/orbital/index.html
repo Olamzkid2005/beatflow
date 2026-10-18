@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orbital — BeatFlow design prototype</title>
+<style>
+@font-face{font-family:Orbital;src:url(./JetBrainsMono-Variable.woff2) format('woff2');font-weight:100 800;font-display:swap}
+:root{color-scheme:dark;font-family:Orbital,monospace;background:#101310;color:#e6e9dd}*{box-sizing:border-box}body{margin:0}header,main,footer{max-width:1660px;margin:auto;padding:28px 40px}header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #333b31}.eyebrow{font-size:10px;letter-spacing:2px;color:#a6b39a;text-transform:uppercase}h1{font-size:30px;font-weight:500;letter-spacing:-1.5px;margin:8px 0}header a{color:#d3e0c6;font-size:12px}main{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:32px}.stage{min-width:0}canvas{display:block;width:100%;height:auto;background:#080a08;border:1px solid #394235}.caption{display:flex;justify-content:space-between;gap:15px;font-size:10px;color:#9eac92;line-height:1.7;margin:12px 0}.notice{padding:16px 0;border-top:1px solid #343b30;font-size:11px;color:#a9b69f;line-height:1.8}h2{font-size:11px;text-transform:uppercase;letter-spacing:2px;margin:0 0 20px;color:#c3ceba}label{display:block;font-size:11px;margin:16px 0 7px;color:#c5cfbc}input,select,button{font:inherit;font-size:12px;color:inherit;max-width:100%}input[type=text],select{width:100%;padding:11px;background:#171d15;border:1px solid #3b4735;border-radius:2px}input[type=range]{width:100%;accent-color:#bdcfaa}button,.link{background:#c0d3aa;border:1px solid #c0d3aa;color:#14200e;padding:12px 15px;cursor:pointer;text-decoration:none;display:inline-block}.secondary{background:transparent;color:#d8e3cc;border-color:#48563f}.actions{display:flex;gap:8px;flex-wrap:wrap;margin:22px 0}.value{float:right;color:#9aaf87}button:disabled{opacity:.5;cursor:wait}:focus-visible{outline:2px solid #e2f5cb;outline-offset:4px}.small{font-size:10px;line-height:1.8;color:#99aa8c}#status{min-height:38px}footer{font-size:10px;line-height:1.8;color:#94a187;border-top:1px solid #343d2e}footer a{color:#c0d3aa}aside{border-left:1px solid #343d2e;padding-left:26px}@media(max-width:900px){header,main,footer{padding:22px}main{grid-template-columns:1fr}aside{border-left:0;border-top:1px solid #343d2e;padding:24px 0}.caption{flex-wrap:wrap}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<header><div><div class="eyebrow">BeatFlow / Design laboratory / 01</div><h1>Orbital field</h1></div><a href="../../images/orbital/asset-sheet.jpg" target="_blank" rel="noopener">Open image sheet ↗</a></header>
+<main>
+<section class="stage" aria-label="Visual design preview">
+<canvas id="scene" width="1920" height="1080" aria-label="Orbital composition: grain disc, tilted rings and editable title"></canvas>
+<div class="caption"><span>1920 × 1080 / LANDSCAPE STUDY</span><span>PROTOTYPE · NOT A RENDERED VIDEO</span></div>
+<div class="actions"><button id="play" disabled>Play simulated motion</button><button id="reset" class="secondary" disabled>Reset time</button><button id="download" class="secondary" disabled>Download current PNG</button></div>
+<p class="notice"><strong>Visual prototype only.</strong> Motion uses a synthetic energy curve, not your track. No audio analysis, MP4 export, saved presets or YouTube actions are implemented here. The title and message are drawn separately from the background.</p>
+<p id="status" role="status">Loading local images and font…</p>
+</section>
+<aside aria-label="Design controls"><h2>Composition controls</h2>
+<label for="title">Track title</label><input id="title" type="text" value="ORBITAL" maxlength="80">
+<label for="message">Reusable message</label><input id="message" type="text" value="PURCHASE THIS TRACK FOR COMMERCIAL USE" maxlength="120">
+<label for="background">Background</label><select id="background"><option value="monochrome">Silver / monochrome</option><option value="obsidian">Obsidian / low light</option><option value="umber">Umber / warm dust</option></select>
+<label for="rings">Rings <output id="rings-value" class="value">8</output></label><input id="rings" type="range" min="1" max="12" value="8">
+<label for="sensitivity">Simulated response <output id="sensitivity-value" class="value">1.00</output></label><input id="sensitivity" type="range" min="0" max="2" step="0.05" value="1">
+<label for="time">Preview time <output id="time-value" class="value">0.00 s</output></label><input id="time" type="range" min="0" max="30" step="0.033333" value="0">
+<div class="actions"><button id="shuffle" class="secondary" disabled>Shuffle pattern</button></div><p class="small">Seed <span id="seed">421337</span><br>Metadata shown in the canvas is sample content.<br>Nothing is uploaded. Refresh resets the design.</p>
+</aside>
+</main>
+<footer>IMAGE PACK / <a href="../../images/orbital/background-monochrome.jpg" download>Monochrome</a> · <a href="../../images/orbital/background-obsidian.jpg" download>Obsidian</a> · <a href="../../images/orbital/background-umber.jpg" download>Umber</a> · <a href="../../images/orbital/grain-alpha.png" download>Grain alpha</a> · <a href="../../images/orbital/stipple-alpha.png" download>Stipple alpha</a><br>Clean backgrounds contain no lettering, disc or rings. Concept PNGs contain flattened sample text; do not use them as editable backgrounds.</footer>
+<script type="module" src="./prototype.mjs"></script>
+</body></html>

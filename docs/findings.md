@@ -1,229 +1,419 @@
-# BeatFlow — comprehensive codebase review
+# BeatFlow — current codebase audit and targeted follow-up
 
-Reviewed 17 October 2026. The original review below describes the pre-repair baseline.
+Reviewed: **18 October 2026**
 
-## Repair follow-up — 17 October 2026
+Source baseline: **`5eaaf24`**, clean before the review
 
-The owner subsequently authorized M0 repairs. Upload network/status recovery, completed IDs, confirmed offsets, bounded retries, Retry-After and cancellation are repaired; public sessions omit credentials; internal route wrappers persist refresh cookies; refresh errors fail clearly; API denials/network errors are structured JSON. Hydration, DST/calendar validity, tag/description rules, displayed validation details and init cancellation are repaired. Zod is declared directly. Native regression tests and required probe assertions are wired into CI; docs include a refreshed M0 project acceptance checklist. See `progress.md` for final verification. Baseline bundled MP4/report are preserved.
+Verdict: **sound architecture, but not finished or ready for dependable end-to-end publishing**.
 
-The historical findings below remain as review context, not a claim that repaired defects are still present. Real Google CORS/publication/quota and future M1 media/performance acceptance remain open. Probe-parser/general test-server hardening and minor visual cleanups were not prerequisites for these M0 workflow repairs.
+This report consolidates the fresh codebase review and a second targeted check of previously untested edges. It supersedes this file's old pre-renderer assessment: the renderer, presets, settings, IndexedDB history, and regression suite now exist. Historical claims that these are missing, that public sessions expose access tokens, or that zod is undeclared do **not** describe the current source.
 
-## 1. What the product is trying to achieve
+## Scope and evidence
 
-BeatFlow is a personal music-to-YouTube publishing workspace for one owner's channel. It is not a multi-user SaaS, general-purpose video editor, or backend rendering platform.
+- Reviewed application pages/components, authentication, YouTube routes/helpers, renderer/assets/templates, browser storage, tests, probe, configuration, CI, and the build spec.
+- First pass: production build and UI checks in real Chrome, with synthetic owner credentials and mocked YouTube boundaries; actual rendering and media inspection; isolated actual-source checks.
+- Targeted follow-up: real Chrome executing the actual TypeScript modules through a temporary local transpilation server; actual IndexedDB transaction abort, actual browser encoders, self-hosted fonts and canvas measurements, runtime template validation/snapshot checks; synthetic concurrent Auth.js refresh requests.
+- No application fixes, dependency changes, deployment, real OAuth, Google calls, or uploads were performed. The only repository change delivered by this task is this Markdown report.
+- **Confirmed** means reproduced or directly established from current code. **Conditional risk** means an explicit dependency/failure scenario was simulated; it is not a claim that it occurred against Google. **Spec gap** means a required behavior is absent or the measured artifact differs.
+- Priorities: **P1** = address before relying on the publishing workflow; **P2** = correctness, format, resilience, or API-contract work for v1; **P3** = hardening/maintainability.
 
-Intended workflow:
+## Findings at a glance
 
-1. Sign in with the owner's Google account and confirm the destination channel.
-2. Select an MP3 and a background image.
-3. Choose one of 2–3 static presets; derive the track name from the filename and let the owner edit branding and supplied variables.
-4. Show a live canvas preview with the original MP3, without encoding a preview video.
-5. Generate a 1920×1080 H.264/AAC MP4 entirely in the browser; preview and download it.
-6. Edit YouTube metadata and immediate/scheduled visibility, then publish explicitly.
-7. Upload directly from the browser to YouTube; YouTube, not a backend scheduler, handles publication after acceptance.
-8. Keep templates/history/settings locally in IndexedDB; no server-side media storage, queue, database, or render service in v1.
+| ID | Priority | Finding | Evidence | Pass |
+| --- | --- | --- | --- | --- |
+| F01 | P1 | Recovery can attach an unrelated video's ID to the current attempt | Actual-source reproduction | Fresh review |
+| F02 | P1 | Generated artifact ownership is split between render and upload state | Production Chrome UI | Fresh review |
+| F03 | P1 | Internal navigation silently aborts active work | Production Chrome UI | Fresh review |
+| F04 | P1 | Default schedule uses browser time but saved-zone interpretation | Chrome UI + actual helper | Fresh review |
+| F05 | P1 | Legacy history is deleted even when migration fails | Actual-source failure injection | Fresh review |
+| F06 | P2 | IndexedDB writes resolve before transaction commit | Real Chrome IndexedDB abort | **Targeted follow-up** |
+| F07 | P2 | Long titles overlap branding and can clip outside the frame | Actual fonts + canvas bounds | **Targeted follow-up** |
+| F08 | P2 | Invalid FPS can produce an audio-only `video/mp4` result | Actual encoder + media readback | **Targeted follow-up** |
+| F09 | P2 | Render boundary neither validates nor snapshots its input | Actual `renderVideo()` calls | **Targeted follow-up** |
+| F10 | P2 | Failed partial uploads are labeled complete | Production Chrome UI | Fresh review |
+| F11 | P2 | Track defaults and upload metadata become stale | Production Chrome UI | Fresh review |
+| F12 | P2 | Storage denial can crash initialization or silently lose history | Actual-source reproduction + inspection | Fresh review |
+| F13 | P2 | Abort during audio encoding does not stop finalization | Controlled encoder-boundary reproduction | Fresh review |
+| F14 | P2 | Output uses sRGB transfer, not full BT.709 signalling | Container and H.264 SPS inspection | Fresh review |
+| F15 | P2 | Immediate public/unlisted visibility is not editable | Source/UI inspection; spec gap | Fresh review |
+| F16 | P2 | Parallel refresh responses can overwrite successful rotated credentials | Synthetic Auth.js requests; conditional risk | **Targeted follow-up** |
 
-The architectural priorities are modest CPU/RAM on an older laptop, clear cancel/cleanup behavior, one render at a time, and reliable publishing without duplicating uploads. Current desktop Chrome/Edge only is a deliberate constraint.
+## Detailed findings
 
-### Interfaces and output acceptance
+### F01 — Recovery can report the wrong upload as successful
 
-The planned renderer interface is `renderVideo({ audio, background, template, vars }, { fps?, signal, onProgress }): Promise<Blob>` with MIME `video/mp4`. `previewFrame` must share the same scene drawing implementation; `lib/renderer/` must remain React-free.
+**References:** `lib/youtube/reconcile.ts:69–83`; `app/(app)/generate/page.tsx:281–309`.
 
-Required output: non-fragmented MP4, moov before mdat, no edit lists, 1920×1080 even dimensions, H.264 High level 4.0, progressive 4:2:0 with BT.709 tagging, configurable fps initially 1, keyframes around 2 seconds, AAC-LC stereo 48 kHz at a 256–320 kbps target, duration within 0.1 seconds of input. The final partial frame needs the remaining audio duration, not an unconditional full frame.
+The matcher normalizes the title, accepts any matching upload after `notBefore - 120 seconds`, and returns the newest one. There is no attempt identifier or upper time bound. The UI treats the match as success and stores the current attempt's requested privacy/schedule against that ID.
 
-## 2. Where the repository actually is
+**Reproduction:** attempt starts at `2026-10-18T12:00:00Z`; the only playlist candidate has the same title and timestamp `2026-10-18T11:59:00Z`. The function returns that unrelated earlier video's ID. Later same-title uploads can also match because there is no upper bound.
 
-| Milestone | Current state |
+**Impact:** false success, wrong history links, misleading scheduling records, and uncertainty about whether retrying creates a duplicate. The comment that recovery “never guesses” is inaccurate.
+
+**Recommendation:** prefer querying the retained resumable session. If playlist matching is necessary, show candidates and require confirmation; reject ambiguity and do not infer actual privacy, processing, or schedule from the attempted request.
+
+### F02 — Render and upload state disagree about which artifact exists
+
+**References:** `components/render-studio.tsx:198–224`; `components/render-studio.tsx:273–275`; `app/(app)/generate/page.tsx:355`.
+
+`Use for upload` constructs a `File` held in the parent. Discard/new-render cleanup clears the renderer's URL/Blob only; it cannot clear the parent's selected upload file. The renderer receives no upload-busy state.
+
+**Production UI reproduction:** render → Use for upload → Discard removes the video preview but leaves the old MP4 selected for upload. During a held upload, Render MP4, Use for upload, and Discard are all enabled. A later handoff can change the desk's displayed selection while the upload closure still sends the previous file.
+
+**Impact:** stale video selection, retained media despite the “released from memory” message, and controls that misrepresent the active operation. This is not proof that every `File` construction physically copies its bytes; the confirmed issue is retained ownership/reference state.
+
+**Recommendation:** one owner for the generated artifact and coordinated upload state; invalidate the matching upload selection on discard/replacement and gate conflicting actions with appropriate confirmation.
+
+### F03 — Internal navigation silently cancels render/upload work
+
+**References:** `lib/use-before-unload.ts:11–18`; `components/nav-links.tsx:28–39`; `components/render-studio.tsx:182–193`; `app/(app)/generate/page.tsx:142–146`.
+
+`beforeunload` covers document unload, not normal Next.js client navigation. Both jobs are aborted during component unmount.
+
+**Production UI reproduction:** start a render; click History while `Rendering…` is visible. The route changes to `/history` with **zero confirmation calls**. Upload has the same unmount-abort lifecycle, though that navigation case was established by code rather than separately replayed.
+
+**Recommendation:** guard internal navigation/sign-out and browser history changes while work is active, or keep active jobs in a persistent owner above page navigation. Preserve honest messaging that aborting local upload work does not delete a video Google already accepted.
+
+### F04 — Default scheduling is wrong when saved and browser zones differ
+
+**References:** `app/(app)/generate/page.tsx:54–55`; `app/(app)/generate/page.tsx:118–128`; `lib/time.ts:82–87`.
+
+The initial datetime is formatted with the browser's local getters, then submitted as wall time in the saved producer timezone.
+
+**Reproduction using the actual helpers:** an intended instant of `2026-10-18T12:00:00Z` formats to `2026-10-18T08:00` in New York. Interpreted as Tokyo time, it becomes `2026-10-17T23:00:00Z`—13 hours earlier. Chrome also confirmed the date field used browser time while its hint said `Asia/Tokyo`.
+
+**Impact:** rejected defaults or an unintended future publish time. Manually entering the desired wall time in the displayed zone is a workaround, not a fix.
+
+**Recommendation:** resolve the working zone first; format `now + 10 minutes` in that zone. Show a UTC/local confirmation and test differing zones plus date boundaries. Existing strict DST conversion is useful and should be retained.
+
+### F05 — A failed migration deletes legacy history
+
+**References:** `lib/history-store.ts:87–97`.
+
+Migration sets `migrated = true` before success and clears the legacy store in `finally`. A failed IndexedDB read/write still deletes the only pre-migration copy and prevents retry in that controller instance.
+
+**Reproduction:** injected a backend whose `list()` throws `IndexedDB unavailable`; migration rejected and `legacy.clear()` still ran.
+
+**Recommendation:** preserve the legacy key until every migrated row is durably committed, then mark success. Share an in-flight migration promise for concurrent callers. Decide explicitly how to merge legacy rows when IndexedDB already contains entries instead of silently dropping them.
+
+### F06 — New: IndexedDB reports write success before durable commit
+
+**References:** `lib/history-store.ts:164–176`; `lib/history-store.ts:182–183`; `lib/history-store.ts:196–197`.
+
+The transaction helper resolves on `request.onsuccess`, not `tx.oncomplete`. A request can succeed while its transaction later aborts. Once resolved, the promise cannot be rejected by `tx.onabort`.
+
+**Real Chrome reproduction:** attached a listener to a real `put` request and aborted its transaction when the request reported success. Observed event order:
+
+```text
+request-success
+put-promise-fulfilled
+transaction-abort
+```
+
+`await backend.put(...)` fulfilled, but a subsequent read returned `[]`: the entry never committed. The same helper serves `clear()`.
+
+**Recommendation:** capture the request result, resolve only on transaction completion, and reject request/transaction failures. Test post-request abort for both put and clear. This also matters to safe migration: a fulfilled put is currently insufficient evidence to delete legacy data.
+
+### F07 — New: long titles overlap branding and clip vertically
+
+**References:** `lib/renderer/scene.ts:195–207`; `lib/renderer/scene.ts:228–237`; `lib/templates/first-light.ts:45–74`; `lib/templates/pulse.ts:45–74`; `tests/renderer.test.mjs:58–84`.
+
+Layout only constrains width and line count. It does not reserve vertical space for branding or frame boundaries. The existing test uses an approximate measure function and checks horizontal widths, so it cannot detect this.
+
+**Real-font Chrome reproduction:** rendered the following editable track title with the shipped Inter/JetBrains Mono fonts and `PRODUCER BRAND`:
+
+```text
+Midnight Loop Extended Visualizer Version Featuring A Guest Verse And A Very Long Name That Keeps Going
+```
+
+Measured actual glyph bounds:
+
+| Preset | Title result | Brand bounds | Defect |
+| --- | --- | --- | --- |
+| First Light | Three lines at 88 px; second line y≈899.9–986.4; third ends y≈1083.4 | y≈957.0–979.5 | Second line overlaps branding; third line extends beyond the 1080 px frame |
+| Pulse | Three lines at 76 px; third line y≈640.0–715.2 | y≈664.9–685.9 | Third line overlaps centered branding |
+
+The long track-name input has no 100-character title restriction; this is a reachable renderer case, not an invalid YouTube-title test. The overlap occurs horizontally as well as vertically in these compositions.
+
+**Recommendation:** fit text within a bounding rectangle, reserving brand space; reduce size/line count or reposition branding. Add real-font visual/bounds regressions for all presets, including 2–3-line titles and long producer names.
+
+### F08 — New: invalid FPS silently returns audio-only MP4s
+
+**References:** `lib/renderer/encode.ts:28–34`; `lib/renderer/encode.ts:54–67`; `lib/renderer/index.ts:101–106`.
+
+`fps` is a public numeric option but is not checked for finite positive values before resource allocation/encoding.
+
+**Actual Chrome encoder reproduction** using 0.1 seconds of stereo audio:
+
+| FPS | Observed result |
 | --- | --- |
-| M0: YouTube proof | Owner auth, channel API, upload initialization, test UI, browser uploader, and local codec/media proof exist. Real deployed-origin upload, schedule outcome, and project quota are still not recorded. |
-| M1: render proof | Not implemented in the app. The 5-second synthetic probe is supporting evidence, not completion of MP3/image rendering. |
-| M2: templates | No renderer schema, scene engine, templates, variable binding, or title auto-fit yet. |
-| M3: publishing | Some metadata/upload groundwork exists for M0; robust recovery, full visibility/timezone controls, and IndexedDB history remain. |
-| M4: polish | Settings, discard confirmation, full error/empty states, and production workflow polish remain. |
+| `0` | Downstream `TypeError: timestamp must be a finite number` |
+| `-1` | Resolved 698-byte `video/mp4`; no video track; audio track present |
+| `NaN` | Resolved 698-byte `video/mp4`; no video track; audio track present |
+| `Infinity` | Resolved 698-byte `video/mp4`; no video track; audio track present |
 
-Missing M1–M4 features are planned work, not defects in M0. Milestone progression requires approval; no M1 implementation was started during this review.
+Track presence was checked by reopening each result through Mediabunny, not inferred solely from the byte count. The current UI always uses the default FPS; this is a public-engine contract defect, not a currently exposed FPS form control.
 
-### Architecture assessment
+**Recommendation:** reject nonfinite/nonpositive FPS before constructing the encoder, consider a documented upper bound, and validate that successful output contains the required tracks. Test supported positive FPS separately.
 
-- `auth.config.ts`: Google provider, owner sign-in restriction, optimistic authorization.
-- `auth.ts`: JWT token capture/refresh and session projection.
-- `proxy.ts`: coarse gate on `/generate` and `/api/youtube/*`.
-- `lib/require-owner.ts`: independent handler-level authorization.
-- YouTube route handlers: channel lookup and metadata-only resumable initialization.
-- `lib/youtube/uploader.ts`: framework-free browser uploader; media never traverses Next API routes.
-- `lib/time.ts`, `lib/youtube/metadata.ts`: shared conversion/validation helpers.
-- `tools/m0-probe/`: local, independent real WebCodecs/Mediabunny encoding and playback harness.
+### F09 — New: public render input is neither validated nor snapshotted
 
-This is a sensible foundation for the intended scope. A major architecture rewrite or extra hosted infrastructure is not justified.
+**References:** `lib/renderer/index.ts:68–106`; `lib/renderer/template-schema.ts:83–107`.
 
-## 3. Prioritized findings
+Presets are parsed at module load, but `renderVideo()` trusts its TypeScript `Template` parameter at runtime and keeps reading mutable input objects across awaits. Its current caller uses fixed presets and disables editing during render; that reduces UI exposure but does not fulfill the reusable engine's boundary guarantees.
 
-### High — interrupted upload recovery is not reliable
+**Actual engine reproductions in Chrome:**
 
-**References:** `lib/youtube/uploader.ts:104–114,146–181`; `app/generate/page.tsx:93–140`.
+1. Set `schemaVersion: 999` on an otherwise valid preset and call `renderVideo()`: it resolved a 13,239-byte MP4 instead of rejecting the version.
+2. Mutate the passed template's text value in the decode progress callback: exported scene drawing used `Mutated template`, not the original value. The render therefore does not take an immutable snapshot.
+3. The schema accepts `1919 × 1079` dimensions despite the specified even 1920×1080 output contract. This was a schema acceptance check, not a claim that those dimensions encoded successfully.
 
-Reproduced against the actual helper with mocked HTTP responses:
+**Recommendation:** parse/clone the template and copy variables at entry, validate output dimensions and FPS, and expose configurable duration limits deliberately. Keep editor-schema flexibility separate from export-format restrictions if needed.
 
-- A thrown fetch/network error exits immediately. `retryable: true` does not cause retry; nothing in the UI consumes it or retains a resumable workflow.
-- A status query returning 200/201 with a completed video resource is reduced to `totalBytes`. The loop exits and throws `Upload finished without a video id.` A video can already exist while the UI reports failure, inviting duplicate submission.
-- A status 308 with no Range falls back to the sent chunk end. Google's protocol says an actual absent Range means zero bytes stored. Guessing advances past unconfirmed bytes.
-- Repeated 308 responses reporting no forward progress have no bounded retry/backoff; the normal retry counter resets on each 308.
-- Every normal chunk 308 incurs a second PUT status query even though its direct Range could provide the offset.
+The implemented progress callback accepts `{ stage, pct }` and allows omitted options; the spec illustrates `(stage, pct)` with required cancellation/progress options. Current call sites agree with the implementation, so this is not an observed runtime failure, but the public contract should be reconciled/documented.
 
-**Direction:** model incomplete/completed/error status explicitly, preserve completed video IDs, recover network failures within the same session, use confirmed offsets only, and bound no-progress retries. Respect Retry-After and cancellation. Verify browser visibility of 308/Range on the actual deployed origin.
+### F10 — A failed partial upload is labeled complete
 
-**Important correction:** wrong offsets are not proof that Google accepts corrupt media. Google documents rejecting skipped/overlapping byte ranges. The established risks are stalls, failed recovery, misleading progress/results, and duplicate uploads.
+**References:** `app/(app)/generate/page.tsx:516–537`.
 
-### High — current M0 evidence cannot close the publishing gate
+The progress card switches to “Upload complete” and “Handed off” whenever `busy` is false, including after an error that leaves progress populated.
 
-**References:** build spec §3/§9; `M0-FINDINGS.md:9–36,80–100`.
+**Production UI reproduction:** first 256 KiB chunk acknowledged by a 308 Range response, next request fails with HTTP 400. UI simultaneously shows the failure, **50%**, **Upload complete**, and **Handed off**.
 
-No real deployed-origin CORS result, observed scheduled-publication outcome, or owner's Cloud Console quota is recorded. These are still the acceptance gate stated in the spec. Local codec success is not a substitute.
+**Recommendation:** distinguish uploading, complete, failed, cancelled, and unknown outcome. Only a confirmed video result should display completion/handoff language.
 
-There is also a material documentation change: the current official videos.insert reference explicitly says **videos uploaded from unverified API projects are not restricted to private viewing mode**. The current quota reference consistently lists a separate 100-call/day Video Uploads bucket at 1 unit per call. The historical private-lock certainty and contradictory quota table discussion should therefore be revalidated, not repeated as current facts.
+### F11 — Track identity and upload defaults become stale
 
-**Direction:** update the dated assumptions with current authoritative references and record an authorized real M0 run. Do not assume an audit application is necessary based only on the historical notes. Do not skip milestone approval based only on the changed documentation.
+**References:** `components/render-studio.tsx:139–145`; `app/(app)/generate/page.tsx:48–49`; `app/(app)/generate/page.tsx:113–116`; `app/(app)/generate/page.tsx:355`.
 
-### Important — token refresh failures are treated as usable credentials
+**Production UI reproductions:**
 
-**References:** `auth.ts:11–13,48–49`; `lib/require-owner.ts:23–31`.
+- Select `First_Track.mp3`, then `Second_Track.mp3`: the selected audio changes, but the track name remains `First Track`.
+- Render and hand off a track: YouTube title remains `BeatFlow M0 test — 5 seconds`; an empty starting description falls back to `M0 pipeline proof for BeatFlow.`
 
-A failed refresh leaves the old `accessToken` on the token and sets an error. The guard checks token presence only, so an expired-token owner session is returned as `ok: true`. Reproduced with `RefreshAccessTokenError` and a stale token.
+**Recommendation:** distinguish untouched automatic defaults from user edits, update filename-derived fields for new sources, and offer an intentional title handoff. Do not publish demo metadata by default or overwrite a deliberately edited title.
 
-This does not grant a nonowner access; upstream Google calls then fail instead of producing a clear reauthentication state.
+### F12 — Storage denial can crash initialization or silently lose history
 
-The installed Auth.js no-argument `auth()` path also returns the session without forwarding refresh Set-Cookie headers. The proxy uses the configuration without refresh logic. Consequently route-level refreshed JWT state is not clearly persisted to the browser; verify repeated requests and refresh-token rotation before relying on long-lived sessions.
+**References:** `lib/settings.ts:20–29`; `lib/history.ts:23–29`; `lib/history.ts:53–68`; `app/(app)/settings/page.tsx:113–119`; `app/(app)/history/page.tsx:74–78`.
 
-**Direction:** reject refresh-error sessions cleanly, offer sign-in recovery, and verify refresh persistence through a response-writing route/wrapper. Raw JWT reads alone are not a replacement for token-refresh logic.
+- `readSettings()` obtains `window.localStorage` outside its `try`. A getter throwing `SecurityError` escapes. This was reproduced with an injected throwing getter; both settings and studio initialize state through this reader.
+- The history fallback catches adapter construction, not asynchronous IndexedDB open failures. Later errors are hidden as an empty list or swallowed add, so the advertised memory fallback does not cover that case.
+- Reset/clear UI paths do not catch storage errors; history is optimistically emptied before clearing succeeds. These are source-established failure paths, not separately replayed browser scenarios.
 
-### Important — access token is browser-readable now, contrary to its type comment
+**Recommendation:** catch storage acquisition, handle asynchronous backend failure and retry/fallback explicitly, preserve a successful upload receipt, and show a nonfatal “not saved locally” warning. Do not turn persistence failure into false upload failure, but do not hide it either.
 
-**References:** `auth.ts:78–85`; `types/next-auth.d.ts:5`.
+### F13 — Audio-phase cancellation does not stop finalization
 
-With a synthetically signed local session containing fake tokens, `GET /api/auth/session` returns `accessToken`. No `useSession` consumer is needed. The refresh token was correctly absent from both the session and session user.
+**References:** `lib/renderer/encode.ts:70–80`; `components/render-studio.tsx:246–247`.
 
-An owner receiving their own short-lived access token is not an authentication bypass and the spec allows it as a possible upload fallback. It does, however, enlarge exposure relative to the claimed server-only boundary and does so unconditionally.
+After the last pre-audio abort check, the encoder awaits the entire `audioSource.add()`, closes sources, finalizes, and returns without another signal check or an abort-triggered output cancellation.
 
-**Direction:** make the boundary intentional: either keep access credentials out of public session serialization or explicitly document/limit browser access if the upload design needs it. Continue never serializing refresh tokens.
+**Controlled reproduction:** held the audio-add boundary, aborted, then released it. `output.cancel()` was not invoked; finalization ran and the encoder resolved. This used mocked encoder operations to isolate control flow, not a measured long-track cancellation delay. The UI's post-render check prevents displaying the cancelled output, but does not stop the work.
 
-### Important — scheduling has both hydration and date-conversion defects
+**Recommendation:** propagate cancellation to the output during cancellable work, check the signal after each long await and before return, and test cancellation in decode, video, audio, and finalize with honest limitations for non-abortable browser APIs.
 
-**References:** `app/generate/page.tsx:24–44`; `lib/time.ts:48–64`; `lib/youtube/metadata.ts:55–78`.
+### F14 — Output does not strictly satisfy BT.709 transfer signalling
 
-- `/generate` is statically prerendered but renders Date.now-derived schedule state and the executing environment's timezone. Its HTML contains a build-time date/time. Chrome emulated in America/New_York against the Africa/Lagos prerender reproduced React hydration error #418 and a client rerender.
-- `2026-03-08T03:30` in America/New_York should be `2026-03-08T07:30:00Z`; the helper returns `08:30:00Z` because it samples the offset at the naive UTC instant.
-- The local-value regex accepts trailing junk and Date.UTC normalizes impossible dates. The server schema likewise accepts a future `2028-02-31T10:00:00Z` because Date.parse normalizes it.
-- Ordinary Lagos conversion is correct, and past/private-visibility validation works.
+**References:** `lib/renderer/encode.ts:41–46`; `tools/m0-probe/mp4.mjs:14–54`.
 
-**Direction:** initialize browser-specific values after mount with stable initial markup; strictly validate calendar/time components and round trips; handle DST gaps and ambiguous times with an explicit policy. A second offset pass can help ordinary transition errors but is not a full ambiguity policy.
+A freshly UI-rendered artifact and the fresh probe output both had:
 
-### Important — Cancel does not cover the whole publishing operation
+```text
+H.264 profile_idc = 100 (High), level_idc = 40
+chroma_format_idc = 1 (4:2:0), frame_mbs_only_flag = 1 (progressive)
+colr/nclx: primaries = 1, transfer = 13, matrix = 1, full range
+SPS VUI:   primaries = 1, transfer = 13, matrix = 1, full range
+```
 
-**References:** `app/generate/page.tsx:88–110`; `lib/youtube/uploader.ts:147,163–166`.
+Transfer 13 is sRGB/IEC 61966-2-1, not BT.709 transfer 1. Both container and bitstream agree. The issue is not missing progressive/chroma evidence; those properties were inspected and passed. SPS storage includes normal 1088-line macroblock padding with a 1080-line display crop.
 
-Init-upload does not receive the controller's signal. Browser testing held that request pending, clicked Cancel, and confirmed the UI stayed busy with no cancellation acknowledgement until initialization returned. Status queries also lack the signal; sleep is not abort-aware and requests have no independent timeout.
+**Recommendation:** implement/verify correct color conversion and signalling rather than merely relabeling the output. Assert profile, chroma, progressive flags and color in media tests. This mismatch does not establish broken playback or YouTube rejection.
 
-**Direction:** propagate cancellation through initialization, data PUTs, status PUTs, and backoff, and check the signal before reporting success. Cancel cannot guarantee that a remote upload already accepted by YouTube is undone; UI messaging must not imply deletion.
+### F15 — Visibility is not editable as specified
 
-### Important — zod is a production import with no production dependency
+**References:** `app/(app)/generate/page.tsx:190–206`; `app/(app)/generate/page.tsx:707–720`.
 
-**References:** `package.json:12–18`; `lib/youtube/metadata.ts:1`; `app/api/youtube/init-upload/route.ts:2`; lockfile `node_modules/zod`.
+The form chooses private when scheduled and unlisted otherwise. It has no public/unlisted selector for immediate publishing, although the product requires per-upload visibility editing.
 
-Zod resolves through a hoisted dev-only ESLint dependency. A production-only install has no declared guarantee that these imports resolve. The present full development install/build passing does not make this dependency contract safe.
+**Recommendation:** add explicit immediate visibility selection, force scheduled uploads private, and verify both UI requests and server validation.
 
-**Direction:** declare zod directly in dependencies and update the lockfile when implementing the fix.
+### F16 — New: concurrent refresh can overwrite successfully rotated credentials
 
-### Important — validation accepts metadata that YouTube rejects
+**References:** `auth.ts:11–51`; `auth.ts:72–78`.
 
-**References:** `lib/youtube/metadata.ts:29,46–52`; `app/generate/page.tsx:112–114`.
+Every request with an expired cookie refreshes independently. There is no in-flight coordination; both successful and failed refresh results can set a new session cookie.
 
-- Tag length omits commas and the two quote characters counted around tags containing spaces. Reproduced: 100 copies of `a b c` pass at 500 raw characters but count as 799 under Google's documented rule.
-- Descriptions containing `<` or `>` pass local validation, despite official API restrictions.
-- The API returns field-level issues, but the UI discards them and displays only `Invalid upload request.` Browser reproduction confirmed the actionable issue message is hidden.
+**Synthetic Auth.js reproduction:** sent two concurrent requests with the same expired owner cookie. Mock token endpoint accepted the first and rotated its refresh token, then returned `invalid_grant` for the second. Observed:
 
-**Direction:** align accounting/content rules with the upstream API, then surface field errors. Unicode character policy should be explicit too, but it is not the primary demonstrated tag bug.
+```text
+refreshCalls: 2
+response 1: owner authorized, access token present, rotated refresh token retained
+response 2: guard 401, RefreshAccessTokenError, no access token, old refresh token retained
+```
 
-### Important — the probe is diagnostic, not a trustworthy pass/fail gate
+If the second cookie is processed last, it can replace the successful cookie. **Conditional risk:** this proves the code's behavior under rotation/rejection, not that Google currently rejects parallel refreshes or rotates on every refresh. Multiple tabs/requests and the actual deployed provider behavior need verification.
 
-**References:** `tools/m0-probe/probe.html:68–86,370–383`; `tools/m0-probe/run.mjs:223–241`; `.github/workflows/ci.yml:32–38`.
+**Recommendation:** define a refresh concurrency strategy consistent with stateless sessions and deployment topology; in-process single-flight alone does not coordinate separate serverless instances. Avoid adding a database/cache merely for this review. Add concurrent-response regression tests and record actual Google behavior before choosing a larger solution.
 
-The page captures step exceptions into `ok: false`. The runner still writes/prints the report without setting a failure exit status when codecs/render/playback fail or MP4 inspection is null. An isolated execution of the actual runner with failed step results confirmed this behavior. Seek timeout also resolves as success.
+## Additional hardening and improvement areas
 
-There are no committed unit/integration regression tests or test script; CI only lints/builds. The probe is genuine runtime testing and should not be dismissed as no testing at all, but it is not run by CI and is not currently an asserting acceptance suite.
+These are not presented as additional demonstrated production failures:
 
-**Direction:** separate expected exploratory capability variants from required checks, fail required checks explicitly, validate output properties, and add focused source-level regression coverage without requiring Google credentials.
+- **Verified email:** `auth.config.ts:33–34` accepts an exact owner email even when a synthetic profile has `email_verified: false`. Require Google's verified-email assertion for email-based authorization. No forged Google identity or actual owner-gate exploit was demonstrated.
+- **Input resource budget:** `lib/renderer/assets.ts:53–70` fully decodes a photo before downscaling; there is no explicit image pixel limit. `lib/renderer/audio.ts:24–34` rejects overlong audio only after full decoding. Full decoded 48 kHz stereo Float32 audio alone is roughly 220 MiB for ten minutes; image/canvas/encoder/output buffers overlap. Define target-device peak memory and wall-time budgets and reject safely where possible. No new speedup or memory-growth claim is made.
+- **Audio bitrate contract:** the requested bitrate is a VBR target, not proof of encoded 256–320 kbps on every input. Resolve whether the spec means a target or strict rate; test representative music before choosing constant mode.
+- **History truthfulness:** `lib/history.ts:78–81` marks a passed schedule “published” based solely on time. It does not verify processing, publication, deletion, or changed privacy on YouTube. Label it inferred or fetch actual status. Validate stored dates/enums too; current row validation only checks their types.
+- **IndexedDB lifecycle:** handle failed-open retries, blocked upgrades and version changes; consider BroadcastChannel or another intentional mechanism for cross-tab history updates. IndexedDB writes do not emit localStorage `storage` events.
+- **Accessibility:** native radio controls or complete radio-group keyboard behavior would improve the template picker (`components/render-studio.tsx:404–435`). Connect field errors/hints with `aria-describedby` and mark invalid fields. This was an inspection, not a full WCAG audit.
+- **Maintainability:** extract upload orchestration/state from the 823-line page; retain the useful React-free renderer and pure validation/time/storage helpers. A broad rewrite or hosted render infrastructure is not justified.
+- **Documentation/status:** remove M0-only demo instructions and contradictory readiness copy. Keep deployment-dependent gates separate from locally implemented features.
 
-## 4. Rendering and performance review
+## What is working well
 
-The fresh probe proves useful, narrow facts on this Mac/Chrome: actual H.264/AAC encoding works, Mediabunny creates a readable non-fragmented fast-start MP4, every packet decodes, and Chrome plays/seeks it. It does not implement the production renderer or establish older-laptop performance.
+- Owner checks exist in proxy, rendered-page guard, and every YouTube route; missing owner configuration fails closed.
+- Public sessions omit access and refresh credentials. Route wrappers persist refreshed cookies; refresh failures reject stale credentials.
+- Media goes directly from browser to Google, not through a Vercel body-limited route.
+- Uploader uses server-confirmed offsets, bounded retries/backoff, status recovery, and cancellation propagation.
+- Date conversion rejects invalid calendar dates and DST gaps/ambiguities instead of guessing.
+- Shared scene drawing keeps preview/export composition aligned; self-hosted fonts and validated fixed presets are in place.
+- Actual local rendering, output preview/download, audio preview, settings and IndexedDB history exist. These are not merely planned features.
 
-### Resource budget remains the main M1 risk
+## Verification record
 
-Decoded 48 kHz stereo Float32 audio alone uses `48,000 × 2 × 4 × seconds` bytes: approximately 220 MiB for 10 minutes and 330 MiB for the 15-minute default maximum. Source MP3 bytes, image decoding, canvas, encoder buffers, in-memory encoded packets, final output buffer, and Blob can overlap with that.
+### Existing checks from the fresh review
 
-The installed muxer's `fastStart: 'in-memory'` retains encoded chunks until finalization. That is acceptable as a simple starting point but must be measured on representative music/artwork. Low fps reduces video submissions; it does not remove full decoded-audio memory.
+The following passed against the same unchanged application source. Only Markdown changes in this follow-up, so repeating these would not test different application bytes.
 
-M1 should measure 3- and 10-minute stereo/mono sources, 44.1/48 kHz input, five sequential renders, cancellation at every stage, and peak/process memory. Define a concrete memory/CPU/wall-time budget for the intended older laptop before claiming the requirement is met.
-
-### Format acceptance is incomplete
-
-- The box inspector verifies dimensions, sample entries/counts, durations, front moov, and no elst. It does not parse H.264 SPS details, chroma/progressive flags, or color metadata.
-- Direct examination of the bundled artifact found avcC bytes indicating High profile, level 4.0, with codec string `avc1.640c28`. Accept semantic profile/level rather than requiring the literal constraint-byte spelling `640028`.
-- The bundled `colr/nclx` fields are primaries 1, transfer 13, matrix 1, full-range: BT.709 primaries/matrix with sRGB transfer, not uniform BT.709 1/1/1 signaling. The probe does not configure or assert the full color contract. Decide and verify how the BT.709 requirement applies before copying the pipeline into M1.
-- The 5-second AAC track is about 77 ms longer than video, within the spec's 0.1 s tolerance. This does not prove correct offsets/trimming for real MP3 inputs.
-- Targets are VBR: the synthetic sine/static content has much lower measured bitrate. Resolve whether 256–320 kbps is a target or strict encoded-rate requirement. If strict, evaluate constant mode on actual supported encoders; do not assume support or infer quality from rate alone.
-- ffprobe/MediaInfo/VLC validation, 1/5/24 fps YouTube processing, full-length renders, five-render memory behavior, and unsupported-codec UX remain unverified. (Later measured: VLC playback, the 3- and 10-minute renders, and five-render memory are recorded in `docs/progress.md`; 1/5/24 fps YouTube processing still needs the owner's channel.)
-
-### Do not copy probe cleanup as production cleanup
-
-The direct audio probe creates AudioData without explicitly closing it; failure paths lack comprehensive encoder/output/input cleanup. The local server has incomplete suffix-Range support and uncaught async I/O paths. These are low-priority in a short-lived, loopback-only diagnostic tool but not suitable production patterns.
-
-## 5. Secondary observations
-
-- Next 16 proxy runs in Node, not Edge. The split is harmless and remains useful separation, but comments in auth.config/proxy/README are stale.
-- API proxy denial redirects fetch requests to an HTML sign-in page. The client expects JSON and reports a misleading network/parse error after session expiry; API denial should be machine-readable.
-- Server Google fetch/network/JSON failures do not have a consistent structured 502/timeout response.
-- `authedFetch` spreads `init.headers` as a plain object; this loses entries if a future caller passes Headers or tuple-form headers. Existing call sites do not exercise that case.
-- YouTubeApiError is unused. No need to build a larger abstraction around it until it has a consumer.
-- Inputs are correctly label-wrapped, but progress/status/error updates lack suitable progressbar/live-region semantics.
-- `globals.css` hardcodes Arial even though Geist variables are loaded; minor visual inconsistency.
-- CI is push-only, so external PRs do not get the same explicit PR-triggered check. Existing action v7 references match current upstream, not an assumed version error.
-- Production-domain OAuth is documented configuration, not an application-enforced hostname restriction. Verify canonical AUTH_URL/callback behavior on the actual deployment.
-- The UI's successful result repeats requested privacy/schedule values; it does not independently verify actual YouTube publication, audit state, or processing. That is appropriate as an upload receipt, not proof of M0 publication acceptance.
-
-## 6. Corrections to the earlier review
-
-1. Access token exposure is present on `/api/auth/session` already, not merely latent until useSession is added. Refresh-token exclusion was confirmed.
-2. The central tag bug is missing separator/quote overhead. UTF-16 length can overcount astral characters; the earlier claim that it necessarily allows emoji-heavy tags past the limit was unsupported.
-3. Guessed upload offsets demonstrate broken protocol recovery, not accepted corrupted uploads.
-4. There is meaningful real browser/media testing, even though there is no committed unit/integration suite.
-5. A 100% progress indicator remaining after a successful upload is not itself a bug and should not be prioritized.
-6. `avc1.64003e` ends with hexadecimal 0x3e = level_idc 62 (level 6.2), not level 3.0 as M0-FINDINGS says. The observed unsupported numeric-Quality variant is real; the precise historical explanation should be corrected.
-7. Historical private-lock claims are no longer consistent with the current official API reference and should not be restated as confirmed current policy.
-
-## 7. Verification performed
-
-No real Google account credentials, OAuth flow, publishing, deployment, or external data mutation was used.
-
-| Verification | Result |
+| Check | Result |
 | --- | --- |
-| Prior lint, TypeScript, production build | Passed against unchanged application source; not rerun unnecessarily. |
-| Focused actual-source behavioral checks | 13 evidence checks completed; confirmed both working cases and the listed defects. Temporary scripts are review reproductions, not a newly installed test suite. |
-| Local unauthenticated HTTP | Home 200/sign-in; generate and YouTube routes 307/sign-in; provider endpoint 200 JSON. |
-| Local synthetic owner/nonowner sessions | Owner page 200; nonowner page/channel rejected with 307. Guard isolation also confirmed missing/unconfigured/nonowner rejection. |
-| Local public auth session serialization | Fake access token present; fake refresh token absent. |
-| Browser UI with intercepted fake Google boundaries | Timezone hydration error, hidden issue details, and nonresponsive pending-init Cancel reproduced. |
-| Existing bundled MP4 inspection | Historical 108,389 bytes and report's structural metadata match. |
-| Fresh isolated unchanged probe page | All seven steps passed, including real encodes, full decode, playback, 108,314-byte MP4, moov before mdat, no elst, 1920×1080/1 fps, stereo 48 kHz, 5.077 s. |
-| Synthetic render time | 465 ms on this run only; not representative of music-track rendering or a measured speedup. |
-| Probe false-success reproduction | Actual runner with failed required steps and null inspection does not set failure exit status. |
-| Application/artifact source preservation | No tracked application or baseline artifact modifications. Only review markdown files added. |
+| `npm test` | **51/51 passed**, no failures or skips |
+| `npm run lint` | Passed |
+| `npx tsc --noEmit` | Passed |
+| `npm run build` | Passed, production routes generated |
+| Production Chrome UI | Successful short render/handoff plus the explicitly listed negative scenarios reproduced |
+| Fresh isolated `npm run m0:probe` | Required encode/decode/playback/MP4 assertions passed, Chrome 155.0.8059.80 |
+| Fresh probe MP4 | 107,988 bytes; five 1080p frames at 1 fps; stereo AAC 48 kHz; 5.077 s; front moov; no edit list |
+| Fresh UI MP4 | 52,927 bytes; two 1080p frames; stereo AAC 48 kHz; 2.069 s; front moov; no edit list |
+| SPS + container inspection | High/progressive/4:2:0 confirmed; **strict BT.709 transfer requirement failed** |
 
-## 8. Recommended sequence
+### Targeted follow-up checks
 
-1. Make M0 trustworthy: declare zod, repair uploader recovery/completion/cancellation and refresh-error behavior, expose useful validation errors, add regression checks, and make required probe failures fail.
-2. Refresh the dated external assumptions and complete the authorized real M0 deployment test: destination channel, data PUT and 308/Range visibility, scheduled publication/processing, and actual project quota. Record evidence and obtain milestone approval.
-3. Implement M1 only: one hard-coded design, actual MP3/image input, shared scene preview/export, output/download, cleanup/cancel, codec fallback UX. Establish long-track performance and media acceptance before templates/polish.
-4. Add M2 schema/presets/variables/title fit, then M3 full publishing/history and M4 settings/polish, stopping at each acceptance gate.
+| Check | Result and limit |
+| --- | --- |
+| Real IndexedDB request-success followed by abort | **Durability defect reproduced:** fulfilled put, zero committed rows |
+| Actual encoder with `0`, `-1`, `NaN`, `Infinity` FPS | **Boundary defect reproduced:** zero fails downstream; other values return audio-only MP4s |
+| Unsupported template version through `renderVideo()` | **Validation defect reproduced:** schema version 999 encoded |
+| Template mutation after render began | **Snapshot defect reproduced:** mutated text reached export drawing |
+| Long title with shipped fonts and canvas glyph bounds | **Layout defects reproduced:** First Light overlap/clipping; Pulse overlap |
+| Concurrent expired-cookie Auth.js requests | **Conditional race reproduced** with synthetic token rotation/rejection; no Google request sent |
+| Sign-in with synthetic unverified owner email | Callback accepted; hardening gap, not demonstrated exploit |
 
-**Verdict:** the direction and boundaries fit the product well; the current code is a useful M0 scaffold with a working local media proof, not yet a reliable end-to-end publishing tool. The best next work is narrow reliability fixes and M0 evidence, not additional infrastructure or a broad rewrite.
+Targeted checks were isolated evidence checks, not committed regression tests. A successful reproduction command means the asserted defective behavior was observed, **not** that the corresponding feature passed acceptance. The initial browser harness attempt failed because its synthetic image canvas had no context; the harness was corrected, then the full final checks and assertions completed successfully without changing application code.
+
+Temporary evidence from this review:
+
+- `/tmp/beatflow-fresh-audit.mjs` — first-pass production UI reproduction harness.
+- `/tmp/beatflow-fresh-audit.mp4` and `/tmp/beatflow-fresh-audit-probe/report.json` — first-pass artifact/codec evidence.
+- `/tmp/beatflow-targeted-audit.mjs` — follow-up Chrome harness loading actual source modules.
+- `/tmp/beatflow-targeted-audit.json` — full measured transaction, FPS/track, template and glyph-bound results.
+- `/tmp/beatflow-targeted-audit.png` — follow-up canvas capture.
+
+These temporary paths are local evidence, not durable checked-in test assets. The essential inputs/results are included above so this report does not depend on those files surviving. Temporary browsers/servers were stopped; no production service is required for these local reproductions.
+
+### Not revalidated or still blocked on external acceptance
+
+- Real owner OAuth flow, consent-screen status, canonical callback/deployment settings.
+- Actual Google project quota; deployed-origin readable PUT/308/Range/status responses and interruption recovery without duplicates.
+- YouTube processing and scheduled publication at the chosen FPS; manual upload of a production-rendered artifact.
+- New 3-/10-minute render, representative music quality, five-render process/peak memory, older-laptop CPU/wall time, and VLC/ffprobe/MediaInfo validation. Historical measurements in `progress.md` are prior evidence, not new certification.
+- Physical-device review, Edge-specific behavior, comprehensive accessibility/security testing.
+
+## Recommended repair sequence and acceptance
+
+1. **Publishing integrity:** F01–F05, F10–F12. Acceptance: no wrong-ID recovery, no stale upload selection or silent navigation loss, correct two-zone defaults, no false completion, no migration data loss.
+2. **Storage and composition:** F06–F07. Acceptance: transaction abort rejects writes; long real-font titles/branding remain inside each preset's reserved regions.
+3. **Engine contract and media:** F08–F09, F13–F15. Acceptance: invalid FPS/templates rejected before expensive work; immutable render inputs; cancellation coverage by stage; verified output tracks/color and editable visibility.
+4. **Auth resilience:** F16 and verified-email hardening with tests. Decide any distributed coordination only from provider/deployment evidence and the project's no-extra-services constraint.
+5. **Repeatable browser regressions and real deployed YouTube acceptance.** Preserve existing passing unit checks; add negative lifecycle/transaction/media tests rather than weakening assertions or relying only on build success.
+
+**Bottom line:** retain the architecture. Finish the reproducible state, persistence, layout, scheduling and renderer-contract repairs, then complete deployed YouTube and target-device acceptance before describing v1 as done.
+
+## Executor repair verification runbook — added 18 October 2026
+
+The findings above remain an audit, **not a list of implemented repairs**. Later image/prototype work does not close them. Use these steps to produce reviewable fixes; mark each item PASS / FAIL / NOT RUN with evidence. Do not merely rename a finding to “resolved.”
+
+### 1. Before each repair
+
+1. Read `AGENTS.md`, relevant installed Next.js docs and the exact affected source/tests. Inspect `git status --short`; preserve unrelated edits and baseline probe media/report.
+2. Select **one finding or tightly coupled group**. State authorized file paths, invariant to preserve, expected old failure and new outcome. Do not mix auth/storage/renderer refactors without need.
+3. Add a committed native Node regression where possible and a repeatable real-browser regression where browser APIs are involved. Observe the old failure (or clearly document why prior reproduction is no longer applicable) before claiming the repair.
+4. No production upload, publication, deployment, deletion, account provisioning or new service is authorized by this audit. Use synthetic credentials and mocked Google boundaries. Never include credentials in screenshots/logs/fixtures.
+
+### 2. Finding-specific acceptance evidence
+
+| Finding | Execute this scenario | Required result / evidence |
+| --- | --- | --- |
+| F01 — wrong-ID recovery | Current initialization/upload attempt fails; mocked latest-upload response contains an unrelated recent video. Also test a matching, provably owned attempt | Unrelated ID is never adopted. Keep outcome unknown unless identity is established. Assert IDs and state, not just status text. |
+| F02 — artifact ownership | Render A, hand off A, begin mocked pending upload; finish/render/select B and try handoff/discard/replacement | Active upload keeps immutable A; conflicting handoff blocked. Confirm file identity/content/name and that discarding a render cannot leave a silent stale selection. |
+| F03 — navigation loss | Start each active render/upload phase; click internal nav and browser back; separately test unload | Warning/explicit cancellation behaves as specified; stay keeps job alive; leave aborts and cleans owned resources. `beforeunload` alone does not pass internal navigation. |
+| F04 — schedule zones | Use saved timezone different from browser; render page fresh and change zones. Include DST gap and fold fixtures | Displayed wall time and server UTC conversion agree; nonexistent/ambiguous times reject. Run at least two browser zones; no hydration mismatch. |
+| F05 — legacy migration | Seed old local history; inject IndexedDB open/write/commit failure, then retry successfully | Legacy data remains after failure and migrates idempotently after success; old source removed only after durable commit. Assert actual rows/storage, not only a fulfilled Promise. |
+| F06 — transaction durability | In real IndexedDB, abort the transaction **after request success**; also test successful transaction | Failed write rejects; no false saved state or committed row. Successful write resolves only on `tx.oncomplete`. Database reopen confirms durability. |
+| F07 — typography | Wait for actual self-hosted fonts. Test every built-in with short/long/unbroken/Unicode title and long/missing producer | Actual glyph/effect bounds fit reserved x/y/width/height; no title-brand collision or frame clipping. Test minimum-size ellipsis, multiline vertical bounds and deliberate too-small-box error. Fake-width Node tests alone are insufficient. |
+| F08 — FPS | Call both render/encoder boundaries with `0`, `-1`, `NaN`, `Infinity` and unsupported FPS; also valid static/animated profiles | Invalid values reject before decode/encode work; valid downloaded MP4 contains nonzero video **and** audio tracks at selected rate. Do not accept audio-only `video/mp4`. |
+| F09 — template validation/snapshot | Supply unknown version/field/binding, bad geometry, then mutate original template/vars immediately after job starts | Invalid data rejects before expensive work; mutation cannot change captured frames. Verify object/array/vars detachment and exact selected File references. |
+| F10 — partial history | Mock failed/interrupted upload with partial bytes and unknown outcome; reload history | UI never labels it fully uploaded/complete. Distinguish pending/failed/unknown from confirmed success and preserve recoverable attempt context. |
+| F11 — defaults staleness | Change saved producer/defaults and choose another track after prior render/handoff; test metadata overrides | New draft defaults update intentionally; explicit user edits preserved; current artifact and upload metadata remain bound to the right release. |
+| F12 — unavailable storage | Deny IndexedDB/local storage, trigger quota/write failure and blocked upgrade/open retry | No page crash or silent durable-save claim; actionable error; draft stays usable; retry succeeds when available. Do not erase prior records. |
+| F14 — media color/format | Fresh real MP4 with actual settings; inspect container and bitstream color metadata plus decoded playback | Compare against original required BT.709 transfer/primaries/matrix, progressive/4:2:0, AAC, front moov and edit-list requirements. Current historical transfer mismatch stays open until corrected/retested or owner explicitly changes the requirement. |
+| F13 — cancellation | Cancel at each actual capabilities/decode/assets/video/audio/finalize await, including delayed mocks | Caller receives cancellation, no late success/artifact handoff, no unhandled callback errors; release resources. Nonabortable decode may finish internally but its stale result must be discarded. |
+| F15 — upload visibility | Choose immediate public and immediate unlisted uploads, then enable scheduling; inspect actual mocked init-upload JSON and server validation | Explicit immediate privacy choice reaches the API; scheduled uploads are forced private; invalid schedule/privacy combinations reject. This is YouTube publishing privacy, **not** message-layer visibility. |
+| F16 — auth race | Two concurrent expired-cookie requests with synthetic provider rotation and stale rejection/success; test cookie persistence | A stale failure cannot erase a valid refresh result; credentials never enter public session; response cookies persist. Provider/distributed behavior not proven by a mock remains an explicit limitation. |
+| Email-verification hardening | Synthetic owner-email claim with `email_verified: false`, then verified matching owner and verified non-owner | Reject unverified/non-owner without exposing tokens; verified owner path passes. Confirm trust assumptions/provider field, do not authorize users from a UI-only check. |
+
+Before implementing any row, re-read its full finding above. This table is an execution aid, not permission to substitute a different requirement or claim the original reproduction has become a green acceptance test.
+
+### 3. Command gate after final source edits
+
+Run independently from repo root and record each exit code:
+
+```bash
+npm test
+npm run lint
+npx tsc --noEmit --incremental false
+npm run build
+M0_OUTPUT_DIR="$(mktemp -d /tmp/beatflow-m0-review.XXXXXX)" npm run m0:probe
+```
+
+- Preserve the tested command's status if filtering output (`set -o pipefail`); inspect failure output. Earlier passes do not cover later source edits.
+- `npm test` counts can grow; require zero failures/skips for affected regressions, not a hard-coded old total. Do not delete tests, weaken assertions, catch-and-ignore errors or add type/lint suppressions to hide failures.
+- The probe certifies its own short baseline artifact only. It does not certify animated Orbital, real MP3/music quality, long-track memory or Google production behavior.
+- Start production server with `npm run start -- --hostname 127.0.0.1 --port 3128` as a managed background service, wait for ready, inspect logs and run the real affected UI/API scenario with mocked external boundaries. Do not connect to or reset the owner's real session/data.
+
+### 4. Review packet required from executor
+
+Return the following **with paths to durable evidence**, not a vague “all good”:
+
+```text
+Scope / finding IDs:
+Baseline commit + pre-existing changed paths:
+Changed source/tests/docs:
+Before-fix failing case + observed output:
+After-fix test names, exact commands and exit codes:
+Browser version / OS / timezone(s) / hardware:
+UI steps + screenshots / console and network failures:
+Downloaded media path + SHA-256 + track/timestamp/color inspection:
+Storage/async/cancellation failure-injection results:
+Performance inputs / wall time / CPU / process peak memory (or NOT RUN):
+External acceptance not run / remaining risks:
+Processes/resources created and cleanup result:
+```
+
+Use synthetic, nonsecret fixtures; do not check real media/PII/tokens into evidence. Review the staged/unstaged diff for unrelated files and secrets. Never commit or push unless asked.
+
+### 5. Stop conditions and reviewer use
+
+Stop on failing required tests, lost legacy data, wrong video ID, false saved/uploaded state, invalid/audio-only MP4, leaked credentials, unexplained timestamp drift, stale job mutation or limits exceeded. Fix the proven cause and rerun affected checks; if blocked, report the failing gate and missing requirement. Do not silently change the product requirement, invent a performance result or declare production Google acceptance from mocked tests.
+
+For future template/Orbital implementation, also follow **`docs/template-system-design.md`, sections 13–14**. The static asset pack and isolated simulated prototype are visual-review aids, not evidence that any production audit finding is fixed.

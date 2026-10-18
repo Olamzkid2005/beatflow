@@ -1,0 +1,88 @@
+{
+  "formatVersion": 1,
+  "generator": "tools/orbital-art.mjs",
+  "seed": 421337,
+  "note": "Original local procedural assets. Concepts/thumbnail contain sample text and are static, not audio-reactive outputs.",
+  "files": [
+    {
+      "name": "background-monochrome.jpg",
+      "width": 1920,
+      "height": 1080,
+      "mime": "image/jpeg",
+      "kind": "background",
+      "description": "Text-free silver-charcoal fog; closest to the supplied atmosphere.",
+      "bytes": 235528,
+      "sha256": "babf789304d69ce60b3dd35d90edc74eefb904fd150d1e875e75e99f31cf52ad"
+    },
+    {
+      "name": "background-obsidian.jpg",
+      "width": 1920,
+      "height": 1080,
+      "mime": "image/jpeg",
+      "kind": "background",
+      "description": "Text-free near-black atmosphere for a quieter, higher-contrast graphic.",
+      "bytes": 121225,
+      "sha256": "f772838ade2fef8b0974ddb90f280f84f2e49bdc8ce6621bda5b72339e278f23"
+    },
+    {
+      "name": "background-umber.jpg",
+      "width": 1920,
+      "height": 1080,
+      "mime": "image/jpeg",
+      "kind": "background",
+      "description": "Text-free muted warm-dust alternative; identical safe text bands.",
+      "bytes": 225268,
+      "sha256": "2c13afca6442f20b865d03f2a1cbe23b6867b62df93bd3ed7f036a67c446351f"
+    },
+    {
+      "name": "grain-alpha.png",
+      "width": 256,
+      "height": 256,
+      "mime": "image/png",
+      "kind": "texture",
+      "description": "White alpha film grain, 256 px repeating tile; tint at draw time.",
+      "bytes": 105058,
+      "sha256": "e2f4395b2a277ceedc82b0c6eb2f2c4fbcf2a9490b74dc5fbebe2c55135134e1"
+    },
+    {
+      "name": "stipple-alpha.png",
+      "width": 256,
+      "height": 256,
+      "mime": "image/png",
+      "kind": "texture",
+      "description": "Sparse white alpha stipple, 256 px repeating tile; tint at draw time.",
+      "bytes": 24650,
+      "sha256": "b9c4b56bd6e783b9d9c1a7bcdf02c53f380aae087e05bbbe540c4ab0a8101de5"
+    },
+    {
+      "name": "orbital-preview.png",
+      "width": 1920,
+      "height": 1080,
+      "mime": "image/png",
+      "kind": "concept",
+      "description": "Flattened static concept with SAMPLE lettering/metadata; not a reusable background or motion output.",
+      "bytes": 3653998,
+      "sha256": "56ed259297000a667c722485ee5dd3a620519450b204010a499d9599375fcf13"
+    },
+    {
+      "name": "orbital-thumbnail.jpg",
+      "width": 320,
+      "height": 180,
+      "mime": "image/jpeg",
+      "kind": "thumbnail",
+      "description": "Static 320x180 concept thumbnail; not a finished picker integration.",
+      "bytes": 9922,
+      "sha256": "e1021df8b2cbf1cdb5c7c0527c898ba926411046f78a11121b59d8641a9d0927"
+    },
+    {
+      "name": "asset-sheet.jpg",
+      "width": 1600,
+      "height": 1370,
+      "mime": "image/jpeg",
+      "kind": "contact-sheet",
+      "description": "Overview of the static concept and three clean backgrounds.",
+      "bytes": 228686,
+      "sha256": "0f91be2d625d6fd3ce10361e68da75d513ed25385aba4f161d15be5bdda2f367"
+    }
+  ]
+}

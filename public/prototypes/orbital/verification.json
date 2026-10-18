@@ -1,0 +1,123 @@
+{
+  "browser": "Chrome/155.0.8059.80",
+  "controls": true,
+  "deterministicSeek": true,
+  "playPauseReset": true,
+  "noAutoplay": true,
+  "desktopNoOverflow": true,
+  "mobileNoOverflow": true,
+  "reducedMotionPaused": true,
+  "pageFrames": 18,
+  "downloadedPng": {
+    "path": "public/prototypes/orbital/downloaded-prototype.png",
+    "width": 1920,
+    "height": 1080,
+    "bytes": 2070954,
+    "sha256": "af202b290a19bb95a62af61cb460a4cec6dd839644482de2520c7eb6360ad9db"
+  },
+  "assetChecks": [
+    {
+      "name": "background-monochrome.jpg",
+      "width": 1920,
+      "height": 1080,
+      "loaderWidth": 1920,
+      "loaderHeight": 1080,
+      "minAlpha": 255,
+      "maxAlpha": 255,
+      "minLuma": 1,
+      "maxLuma": 100.33333333333333,
+      "meanLuma": 36.70016059031385
+    },
+    {
+      "name": "background-obsidian.jpg",
+      "width": 1920,
+      "height": 1080,
+      "loaderWidth": 1920,
+      "loaderHeight": 1080,
+      "minAlpha": 255,
+      "maxAlpha": 255,
+      "minLuma": 2,
+      "maxLuma": 32,
+      "meanLuma": 14.203217110324587
+    },
+    {
+      "name": "background-umber.jpg",
+      "width": 1920,
+      "height": 1080,
+      "loaderWidth": 1920,
+      "loaderHeight": 1080,
+      "minAlpha": 255,
+      "maxAlpha": 255,
+      "minLuma": 1.6666666666666667,
+      "maxLuma": 91.66666666666667,
+      "meanLuma": 33.38244904226321
+    },
+    {
+      "name": "grain-alpha.png",
+      "width": 256,
+      "height": 256,
+      "loaderWidth": 256,
+      "loaderHeight": 256,
+      "minAlpha": 0,
+      "maxAlpha": 55,
+      "minLuma": 0,
+      "maxLuma": 255,
+      "meanLuma": 200.95802307128906
+    },
+    {
+      "name": "stipple-alpha.png",
+      "width": 256,
+      "height": 256,
+      "loaderWidth": 256,
+      "loaderHeight": 256,
+      "minAlpha": 0,
+      "maxAlpha": 189,
+      "minLuma": 0,
+      "maxLuma": 255,
+      "meanLuma": 8.7469482421875
+    },
+    {
+      "name": "orbital-preview.png",
+      "width": 1920,
+      "height": 1080,
+      "loaderWidth": 1920,
+      "loaderHeight": 1080,
+      "minAlpha": 255,
+      "maxAlpha": 255,
+      "minLuma": 4,
+      "maxLuma": 214.66666666666666,
+      "meanLuma": 37.19963188016712
+    },
+    {
+      "name": "orbital-thumbnail.jpg",
+      "width": 320,
+      "height": 180,
+      "loaderWidth": 320,
+      "loaderHeight": 180,
+      "minAlpha": 255,
+      "maxAlpha": 255,
+      "minLuma": 0,
+      "maxLuma": 227,
+      "meanLuma": 37.01380208331994
+    },
+    {
+      "name": "asset-sheet.jpg",
+      "width": 1600,
+      "height": 1370,
+      "loaderWidth": 1600,
+      "loaderHeight": 1370,
+      "minAlpha": 255,
+      "maxAlpha": 255,
+      "minLuma": 0,
+      "maxLuma": 244.66666666666666,
+      "meanLuma": 30.8878030720884
+    }
+  ],
+  "externalPageRequests": [],
+  "uncaughtPageExceptions": [],
+  "limitations": [
+    "Simulated energy, not audio analysis",
+    "No production MP4/render/upload integration",
+    "Not an independent visual-quality approval or performance benchmark"
+  ]
+}
