@@ -8,6 +8,9 @@
  *
  * Run: npm run build && npm run memory:check
  * Needs Chrome; set CHROME_PATH to override the macOS default.
+ * MEMORY_PROFILE=orbital measures the 30 fps audio-reactive path.
+ * MEMORY_MODE=quick measures 30 s + retention; MEMORY_DURATIONS=30,180,300 picks
+ * the beat lengths explicitly; MEMORY_RETENTION=0 skips the five cycles.
  */
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
@@ -248,6 +251,55 @@ try {
     }
     throw new Error(`Timed out waiting for: ${expression}`);
   };
+  const readRenderProgress = () =>
+    evaluate(`(() => {
+      const stages = [
+        "Checking browser support",
+        "Decoding audio",
+        "Analyzing the track",
+        "Loading artwork and fonts",
+        "Encoding video frames",
+        "Encoding audio",
+        "Finalizing MP4",
+      ];
+      const node = [...document.querySelectorAll("p")].find((element) =>
+        stages.includes(element.textContent.trim()),
+      );
+      return node ? node.parentElement.textContent.trim() : null;
+    })()`);
+  /**
+   * A 5-minute export is 9000 frames. On the target machine each frame costs
+   * 110–130 ms, so the encode alone takes 16–20 minutes; the timeout must leave
+   * room for that instead of expiring just short of the finish.
+   */
+  const renderTimeout = 1_800_000;
+  const waitForRender = async (seconds) => {
+    const started = Date.now();
+    let progress = null;
+    let loggedAt = started;
+    while (Date.now() - started < renderTimeout) {
+      if (
+        await evaluate(
+          "[...document.querySelectorAll('button')].some((b) => b.textContent.includes('Use for upload') && !b.disabled)",
+        )
+      ) {
+        return;
+      }
+      const now = Date.now();
+      if (now - loggedAt >= 60_000) {
+        loggedAt = now;
+        progress = await readRenderProgress();
+        console.log(
+          `    ${seconds}s render at ${((now - started) / 1000).toFixed(0)}s: ${progress ?? "no progress panel"}`,
+        );
+      }
+      await sleep(150);
+    }
+    const last = await readRenderProgress();
+    throw new Error(
+      `The ${seconds}s render did not finish within ${renderTimeout / 1000}s (last progress: ${last ?? "unknown"})`,
+    );
+  };
   const clickText = (selector, text) =>
     evaluate(`(() => {
       const node = [...document.querySelectorAll(${JSON.stringify(selector)})]
@@ -304,6 +356,9 @@ try {
     };
     sample();
     const timer = setInterval(sample, 100);
+    // A failed render never reaches stop(); an unreferenced timer keeps that
+    // failure from leaving the process alive forever.
+    timer.unref?.();
     return () => {
       clearInterval(timer);
       sample();
@@ -339,7 +394,17 @@ try {
   assert(imageSize > 0);
 
   const mode = process.env.MEMORY_MODE ?? "full";
-  const durations = mode === "quick" ? [30] : [30, 180, 300];
+  // MEMORY_DURATIONS=300 measures just the 5-minute case without repeating
+  // the shorter runs (or the retention cycles, which follow the loop).
+  const durations = process.env.MEMORY_DURATIONS
+    ? process.env.MEMORY_DURATIONS.split(",").map((value) => Number(value.trim()))
+    : mode === "quick"
+      ? [30]
+      : [30, 180, 300];
+  for (const seconds of durations) {
+    assert(seconds > 0 && seconds <= 300, `Unsupported duration: ${seconds}`);
+  }
+  const retention = process.env.MEMORY_RETENTION !== "0";
   const measurements = [];
   for (const seconds of durations) {
     const audioBytes = await pickAudio(seconds);
@@ -349,13 +414,14 @@ try {
     const baseline = readTree();
     const stop = startSampler();
     const started = Date.now();
-    await clickText("button", renderLabel);
-    await waitFor(
-      "[...document.querySelectorAll('button')].some((b) => b.textContent.includes('Use for upload') && !b.disabled)",
-      orbital ? 900_000 : 300_000,
-    );
+    let peak;
+    try {
+      await clickText("button", renderLabel);
+      await waitForRender(seconds);
+    } finally {
+      peak = stop();
+    }
     const elapsed = (Date.now() - started) / 1000;
-    const peak = stop();
     await evaluate("true");
     const resultText = await evaluate(
       "document.querySelector('#video-file')?.files?.[0]?.name ?? document.body.innerText",
@@ -379,43 +445,49 @@ try {
   }
 
   // Retention: five render/discard cycles without reloading the page.
-  await pickAudio(30);
-  await waitFor("document.querySelector('#render-track-name')?.value.length > 0");
-  await waitForAnalysis();
-  const cycleRetained = [];
-  for (let cycle = 1; cycle <= 5; cycle++) {
-    const stop = startSampler();
-    await clickText("button", renderLabel);
-    await waitFor(
-      "[...document.querySelectorAll('button')].some((b) => b.textContent.includes('Use for upload') && !b.disabled)",
-      orbital ? 900_000 : 300_000,
-    );
-    const peak = stop();
+  let growth = 0;
+  if (retention) {
+    await pickAudio(30);
+    await waitFor("document.querySelector('#render-track-name')?.value.length > 0");
+    await waitForAnalysis();
+    const cycleRetained = [];
+    for (let cycle = 1; cycle <= 5; cycle++) {
+      const stop = startSampler();
+      let peak;
+      try {
+        await clickText("button", renderLabel);
+        await waitForRender(30);
+      } finally {
+        peak = stop();
+      }
+      assert(
+        peak.renderer <= BUDGET_MIB,
+        `cycle ${cycle} peaked at ${peak.renderer.toFixed(0)} MiB renderer memory`,
+      );
+      await clickText("button", "Use for upload");
+      await clickText("button", "Discard");
+      await waitFor("document.body.innerText.includes('No video selected')");
+      await send("HeapProfiler.collectGarbage");
+      await sleep(500);
+      const retained = readTree();
+      cycleRetained.push(retained.renderer);
+      console.log(
+        `  cycle ${cycle}: peak ${peak.renderer.toFixed(0)} MiB, retained ${retained.renderer.toFixed(0)} MiB`,
+      );
+    }
+    growth = cycleRetained.at(-1) - cycleRetained[0];
     assert(
-      peak.renderer <= BUDGET_MIB,
-      `cycle ${cycle} peaked at ${peak.renderer.toFixed(0)} MiB renderer memory`,
+      growth <= 150,
+      `retained renderer memory grew ${growth.toFixed(0)} MiB across five cycles (limit 150 MiB)`,
     );
-    await clickText("button", "Use for upload");
-    await clickText("button", "Discard");
-    await waitFor("document.body.innerText.includes('No video selected')");
-    await send("HeapProfiler.collectGarbage");
-    await sleep(500);
-    const retained = readTree();
-    cycleRetained.push(retained.renderer);
-    console.log(`  cycle ${cycle}: peak ${peak.renderer.toFixed(0)} MiB, retained ${retained.renderer.toFixed(0)} MiB`);
   }
-  const growth = cycleRetained.at(-1) - cycleRetained[0];
-  assert(
-    growth <= 150,
-    `retained renderer memory grew ${growth.toFixed(0)} MiB across five cycles (limit 150 MiB)`,
-  );
 
   const browser = await send("Browser.getVersion");
   console.log(
     `\nMEMORY PASS — ${browser.product}, 8 GB 2013 MacBook Air, budget ${BUDGET_MIB} MiB renderer\n` +
       `  profile ${orbital ? "orbital 30 fps" : "static 1 fps"}\n` +
-      `  measured ${measurements.map((m) => `${m.seconds}s/${m.peak.renderer.toFixed(0)} MiB/${m.elapsed.toFixed(1)}s`).join(", ")}\n` +
-      `  five-cycle retention growth ${growth.toFixed(0)} MiB (limit 150 MiB)`,
+      `  measured ${measurements.map((m) => `${m.seconds}s/${m.peak.renderer.toFixed(0)} MiB/${m.elapsed.toFixed(1)}s`).join(", ")}` +
+      (retention ? `\n  five-cycle retention growth ${growth.toFixed(0)} MiB (limit 150 MiB)` : ""),
   );
 } catch (error) {
   failure = error;
@@ -429,6 +501,9 @@ try {
   for (let i = 0; i < 40 && child.exitCode === null; i++) await sleep(100);
   if (child.exitCode === null) child.kill("SIGKILL");
   if (app.exitCode === null) app.kill("SIGKILL");
+  // The failed-render path can leave an idle keep-alive socket open, and
+  // server.close() would then wait for it forever.
+  server.closeAllConnections?.();
   await new Promise((done) => server.close(done));
   await rm(profile, { recursive: true, force: true, maxRetries: 3 });
   if (failure) process.exitCode = 1;

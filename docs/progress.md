@@ -307,5 +307,47 @@ measurable locally, so they were measured instead of deferred.
   comparison; there is no saved preset/library and no explicit still export yet; BPM and key
   are typed display metadata, not analysis results; the preview follows the media element's
   `currentTime` and no encoder-delay offset against the decoded PCM has been measured; the
-  animated profile was measured at 30 s, not at its 5-minute cap; and the deployed-origin
-  and real-device passes remain open.
+  retention cycles are only measured on 30 s beats, not on a 5-minute render; and the
+  deployed-origin and real-device passes remain open.
+
+## Session: full-length Orbital memory proof (18 October 2026)
+
+- Ran the animated profile at its documented cap instead of extrapolating from 30 s. The
+  first attempt did not produce a number: the check's 900 s wait expired while the 300 s
+  render was still encoding at a steady rate, so the 5-minute case was unmeasurable by
+  construction. The encode itself was never stuck — 9000 frames at roughly 110–130 ms each
+  needs about 20 minutes.
+- Fixed `tools/memory-check.mjs` rather than the renderer: the orbital wait is now 30
+  minutes, `MEMORY_DURATIONS=30,180,300` selects beat lengths, `MEMORY_RETENTION=0` skips
+  the five cycles, and the wait logs the studio's stage and percentage every minute and
+  reports the last one if it still times out.
+- Measured on the same 8 GB 2013 MacBook Air target with the 1536 MiB renderer budget
+  (Chrome 155.0.8059.80, production build, analysis included): 30 s beats peaked at
+  **960 MiB** renderer (1354 MiB tree) in 97.3 s, and 928 / 1216 / 1106 MiB in three later
+  runs (the last in 53.4 s — wall time depends on what else the machine is doing);
+  3 min at **1021 MiB** (1438 MiB tree) in 584.6 s; and the full 5 min / 9000 frames at
+  **1046 MiB** renderer (1477 MiB tree, 843 MiB baseline, 537 MiB retained after discard) in
+  **1175.8 s** — 490 MiB under the renderer budget, with the whole Chrome tree (browser, GPU
+  and renderer processes) peaking at 1477 MiB.
+- Peak readings swing by a couple of hundred MiB between runs on this machine (928 → 1216 MiB
+  for the same 30 s case), so the 5-minute peak is not compared to a single 30 s figure.
+  What the run does show is that 9000 frames land in the same band as 900, with 537 MiB
+  retained after discard and −77 / +5 MiB across two five-cycle runs: no rise with track
+  length. The arithmetic points at steady-state allocations rather than the frame loop —
+  5 minutes of stereo Float32 PCM is ~110 MiB, the 60 Hz feature table ~0.3 MiB (18,000 hops
+  × 16 bytes), and the muxed in-memory output ~112 MB at 3 Mbps (inside the 192 MiB packet
+  budget) — but that split was not measured piece by piece.
+- Re-ran the documented quick command twice after the tool change, including once against
+  the final file: **PASS** both times, with cycles peaking at 973/887/897/826/829 MiB
+  (retained 512 → 434 MiB, −77) and then 956/955/946/950/977 MiB (retained 566 → 571 MiB,
+  +5). The success run also exits on its own with code 0.
+- A failed render used to leave the process alive: the 100 ms memory sampler was still armed
+  when the wait threw, so the event loop never drained (a timed-out run sat for 75 minutes).
+  The sampler timer is now unref'd, both render waits stop it in a `finally`, teardown calls
+  `closeAllConnections()` before `server.close()`, and a deliberately shortened timeout now
+  exits 1 with `..., last progress: Encoding video frames17%` and no stray process.
+- Still open: the five retention cycles are measured on 30 s beats only; the 5-minute run
+  proved the artifact is offered for upload but did not probe its 9000-frame count or
+  duration from the downloaded bytes (only the 6 s export in `motion:check` is probed that
+  way); and 19.6 minutes is a wall-clock figure for an offline export — nothing in the UI
+  promises a faster one.

@@ -87,9 +87,14 @@ silently downgraded. Every frame is redrawn, converted to BT.709 and encoded wit
 studio exposes BPM/key/message (display metadata only, never inferred), appearance sliders,
 a motion toggle and Shuffle pattern, and plays the source MP3 against a canvas driven by
 `currentTime`; before analysis finishes it shows a still design preview. Measured on the
-8 GB 2013 MacBook Air target, against a 1536 MiB renderer budget: a 30 s beat peaked at
-906 MiB renderer memory in 84.7 s, and five 30 s render/discard cycles peaked at
-893/817/853/873/881 MiB with −17 MiB retained from the first reading to the last.
+8 GB 2013 MacBook Air target, against a 1536 MiB renderer budget: 30 s beats peaked at
+928–1216 MiB renderer memory (53–116 s wall) across four runs, 3 minutes at 1021 MiB in
+584.6 s, and the full 5-minute cap — 9000 frames at 30 fps — at **1046 MiB in 1175.8 s**
+(19.6 min). Peak readings move by a couple of hundred MiB between runs, so the evidence
+against per-frame growth is that the 5-minute peak lands in the same band as the 30 s ones
+(and 537 MiB is retained after discard), not a rise with track length. Five 30 s
+render/discard cycles peaked at 956/955/946/950/977 MiB with +5 MiB retained from the
+first reading to the last.
 `npm run motion:check` proves the preview reacts (and reproduces on seek) and that a 6 s
 export contains 180 frames at 30 fps with BT.709/limited colour tags in both the `colr` box
 and the SPS VUI. Still open: owner review of 1.8 vs 3 vs 4.5 Mbps motion quality, saved
@@ -131,6 +136,8 @@ npm run a11y:check    # axe WCAG A/AA + keyboard traversal
 npm run memory:check  # 30 s, 3 min, 5 min renders + five cycles
 # MEMORY_PROFILE=orbital MEMORY_MODE=quick measures the audio-reactive 30 fps path
 # instead, with one 30 s render plus the five retention cycles
+# MEMORY_PROFILE=orbital MEMORY_DURATIONS=300 MEMORY_RETENTION=0 measures only the
+# 5-minute animated render (~20 min on the 2013 target); the orbital wait allows 30 min
 npm run idb:check     # durability, migration, and a real two-tab replay
 npm run fps:check     # 30 fps encode/readback and abort
 npm run motion:check  # Orbital preview reaction, 30 fps export, BT.709 tags, cancel

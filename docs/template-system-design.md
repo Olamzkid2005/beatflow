@@ -922,20 +922,24 @@ Measured, not inferred:
   over 6 s with H.264 + AAC, quiet and loud exports differ, `colr` and SPS VUI are both
   limited-range BT.709; cancelling during video encoding returns to `cancelled` with no
   downloadable artifact.
-- `MEMORY_PROFILE=orbital MEMORY_MODE=quick npm run memory:check` on the 8 GB 2013 MacBook Air
-  target (1536 MiB renderer budget): 30 s beat → **906 MiB** peak renderer / 1337 MiB whole
-  tree, **84.7 s**; five 30 s render/discard cycles peaked at 893, 817, 853, 873, 881 MiB with
-  retained readings 510, 486, 490, 492, 493 MiB (−17 MiB first to last).
+- `MEMORY_PROFILE=orbital npm run memory:check` on the 8 GB 2013 MacBook Air target
+  (1536 MiB renderer budget): 30 s beats → **928–1216 MiB** peak renderer (1354–1717 MiB whole
+  tree) in 53–116 s across four runs; 3 min → **1021 MiB** / 1438 MiB, **584.6 s**; the full
+  5 min / 9000 frames → **1046 MiB** / 1477 MiB whole tree, **1175.8 s**, with 537 MiB retained
+  after discard. Read the peak as noisy rather than exact: the same 30 s case moved 288 MiB
+  between runs, so the claim is that 9000 frames stay in the 30 s band, not that they are
+  cheaper. Five 30 s render/discard cycles peaked at 956, 955, 946, 950, 977 MiB with retained
+  readings 566, 570, 573, 570, 571 MiB (+5 MiB first to last).
 - `npm run text:check` covers Orbital's title and producer bands with a 115-character title
   (its metadata and message bands are covered by the Node scene tests); `upload:check` and
   `a11y:check` still pass after the fourth preset was added to the picker.
 
 Still open against this document, and deliberately not claimed:
 
-- The gate 5 production-animation matrix needs 30 s **and 3 min and 5 min** runs on named
-  hardware; only 30 s was measured for the animated profile, so the 5-minute / 9000-frame case
-  is unmeasured. Encoder wall time is about 2.8× real time for the 30 s sample, so it is not
-  real-time.
+- The gate 5 production-animation matrix exists on one machine only (8 GB 2013 MacBook Air);
+  a second named device and the deployed origin have not been run. Encoder wall time is
+  roughly 3.9× real time at the 5-minute cap (19.6 min for 5 min of video), so the export is
+  not real-time and is never described that way.
 - The 192 MiB packet budget, the 16 MiB mux allowance and the final-Blob check are implemented
   but no test drives a job over the cap; cancellation is proven during video encoding, not
   during decode, analysis, assets, audio or finalize.
