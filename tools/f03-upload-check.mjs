@@ -27,6 +27,7 @@ assert(existsSync(join(root, ".next/BUILD_ID")), "Run npm run build first.");
 
 const TEST_TITLE = "BeatFlow M0 test — 5 seconds";
 const results = [];
+const pumps = new Set();
 const record = (name, detail = "") => {
   results.push(name);
   console.log(`  ✓ ${name}${detail ? ` — ${detail}` : ""}`);
@@ -204,6 +205,7 @@ try {
       intercept(event);
     }
   }, 20);
+  pumps.add(pump);
 
   const goto = async (path) => {
     await send("Page.navigate", { url: `${origin}${path}` });
@@ -229,6 +231,60 @@ try {
     assert(paused.length > before, "init-upload was not held");
     await waitFor("document.body.innerText.includes('Upload in progress')");
   };
+
+  // F04: the saved zone owns the default wall time, even when Chrome is elsewhere.
+  await goto("/generate");
+  await send("Emulation.setTimezoneOverride", { timezoneId: "America/New_York" });
+  await evaluate(`localStorage.setItem(
+    "beatflow.producer-settings.v1",
+    JSON.stringify({ producerName: "", timezone: "Asia/Tokyo", defaultTags: [], descriptionTemplate: "" }),
+  )`);
+  await goto("/generate");
+  await waitFor("document.querySelector('#video-schedule') !== null");
+  const scheduleInfo = await evaluate(`(() => {
+    const text = document.body.innerText;
+    const line = text.split(String.fromCharCode(10)).find((value) => value.toUpperCase().includes("SENDS AS"));
+    const time = line?.match(/([0-9]{4}-[0-9]{2}-[0-9]{2}) ([0-9]{2}:[0-9]{2})/);
+    return {
+      browserZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      value: document.querySelector('#video-schedule')?.value ?? null,
+      utc: time ? time[1] + 'T' + time[2] + ':00Z' : null,
+      hint: text.toLowerCase().includes('wall time in asia/tokyo'),
+    };
+  })()`);
+  assert.equal(scheduleInfo.browserZone, "America/New_York");
+  assert.equal(scheduleInfo.hint, true, "the schedule did not state the saved zone");
+  assert.match(scheduleInfo.value ?? "", /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+  assert(scheduleInfo.utc, "the UTC confirmation was not shown");
+  const defaultDrift = Date.parse(scheduleInfo.utc) - (Date.now() + 10 * 60_000);
+  assert(Math.abs(defaultDrift) < 120_000, `default schedule drifted ${defaultDrift}ms from now+10m`);
+  record("default schedule follows the saved zone and shows its UTC instant", scheduleInfo.value);
+
+  // A second browser zone must not move the saved-zone default.
+  await send("Emulation.setTimezoneOverride", { timezoneId: "Europe/Berlin" });
+  await goto("/generate");
+  await waitFor("document.querySelector('#video-schedule') !== null");
+  const secondZone = await evaluate(`(() => {
+    const text = document.body.innerText;
+    const line = text.split(String.fromCharCode(10)).find((value) => value.toUpperCase().includes("SENDS AS"));
+    const time = line?.match(/([0-9]{4}-[0-9]{2}-[0-9]{2}) ([0-9]{2}:[0-9]{2})/);
+    return {
+      browserZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      value: document.querySelector('#video-schedule')?.value ?? null,
+      utc: time ? time[1] + 'T' + time[2] + ':00Z' : null,
+    };
+  })()`);
+  assert.equal(secondZone.browserZone, "Europe/Berlin");
+  assert(secondZone.utc, "the UTC confirmation disappeared in the second zone");
+  assert(
+    Math.abs(Date.parse(secondZone.utc) - (Date.now() + 10 * 60_000)) < 120_000,
+    "the intended instant moved with the browser zone",
+  );
+  assert.match(secondZone.value ?? "", /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+  record("a second browser zone leaves the saved-zone default unchanged", secondZone.value);
+
+  await evaluate('localStorage.removeItem("beatflow.producer-settings.v1")');
+  await send("Emulation.setTimezoneOverride", { timezoneId: "" });
 
   // A previous page, so back has somewhere to go.
   await goto("/history");
@@ -331,6 +387,7 @@ try {
   const pump2 = setInterval(() => {
     while (events.length) intercept(events.shift());
   }, 20);
+  pumps.add(pump2);
   await startHeldUpload();
   await clickText("button", "Cancel upload");
   await waitFor("document.body.innerText.includes('Ready when you are')");
@@ -401,6 +458,7 @@ try {
       }
     }
   }, 20);
+  pumps.add(recoveryPump);
 
   await clickText("button", "Start upload");
   for (let i = 0; i < 700 && !(await bodyText()).includes("Find it on my channel"); i++) await sleep(50);
@@ -439,6 +497,7 @@ try {
   if (serverLog) console.error(serverLog.slice(-2000));
   process.exitCode = 1;
 } finally {
+  for (const id of pumps) clearInterval(id);
   socket?.close();
   child.kill("SIGTERM");
   server.kill("SIGTERM");

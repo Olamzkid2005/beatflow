@@ -24,7 +24,7 @@ This report consolidates the fresh codebase review and a second targeted check o
 | F01 | **Done** | P1 | Recovery can attach an unrelated video's ID to the current attempt | Actual-source reproduction | Fresh review |
 | F02 | **Done** | P1 | Generated artifact ownership is split between render and upload state | Production Chrome UI | Fresh review |
 | F03 | **Done** | P1 | Internal navigation silently aborts active work | Production Chrome UI | Fresh review |
-| F04 | Open | P1 | Default schedule uses browser time but saved-zone interpretation | Chrome UI + actual helper | Fresh review |
+| F04 | **Done** | P1 | Default schedule uses browser time but saved-zone interpretation | Chrome UI + actual helper | Fresh review |
 | F05 | **Done** | P1 | Legacy history is deleted even when migration fails | Actual-source failure injection | Fresh review |
 | F06 | **Done** | P2 | IndexedDB writes resolve before transaction commit | Real Chrome IndexedDB abort | **Targeted follow-up** |
 | F07 | **Done** | P2 | Long titles overlap branding and can clip outside the frame | Actual fonts + canvas bounds | **Targeted follow-up** |
@@ -473,3 +473,11 @@ Migration now reads the legacy rows, skips IDs already present, writes the rest 
 - Tests: `tests/history.test.mjs` asserts bounded, deduped, ordered candidates, zero tolerance, and invalid/inverted windows; `tests/routes.test.mjs` asserts a candidates-only response, exclusion of a later same-title upload, and 400/403/404 states.
 - `npm run upload:check` (Chrome 155.0.8059.80) now **15/15**: network-failed session requests end in “Upload outcome unknown”; the lookup shows a candidate without adopting it; confirmation records `confirmed-recovered`; History marks privacy and schedule unverified.
 - **Limits:** identity is still established by the owner’s confirmation, not by querying the retained resumable session. A real Google channel lookup and the session-query path remain unverified.
+
+### F04 — Default schedule uses the saved zone — **PASS**, 18 October 2026
+
+- `toDateTimeLocalValue(date, timeZone)` now formats wall time in a named zone, and `nextScheduleValue(now, timeZone)` derives the now+10-minute default there. The generate page resolves `timeZone` before seeding `schedule`, so the visible input and the value submitted as that zone cannot disagree.
+- The schedule card shows `Sends as <date> <time> UTC · wall time in <zone>` using the same strict `toUtcIso8601` conversion as submission; a nonexistent or ambiguous wall time shows an inline error instead of a misleading instant.
+- Tests: `tests/time.test.mjs` checks Tokyo/New York wall times, a date-line crossing, the spring-forward boundary, and the exact now+10m round trip.
+- `npm run upload:check` (Chrome 155.0.8059.80) now **17/17**: with the browser forced to `America/New_York` and then `Europe/Berlin` while the saved zone is `Asia/Tokyo`, the default input stays Tokyo wall time and the displayed UTC stays within two minutes of now+10m.
+- **Limits:** the fall-back ambiguous hour still rejects by design, and no deployed Google upload was performed.

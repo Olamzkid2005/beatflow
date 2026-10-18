@@ -78,10 +78,34 @@ export function toUtcIso8601(localValue: string, timeZone: string): string {
   return new Date(candidates[0]).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
-/** Formats a `Date` as a `datetime-local` input value. */
-export function toDateTimeLocalValue(date: Date): string {
+/**
+ * Formats a `Date` as a `datetime-local` input value. Pass `timeZone` whenever
+ * the value will be submitted for that zone; the browser's own getters would
+ * print a different wall time and shift the intended instant.
+ */
+export function toDateTimeLocalValue(date: Date, timeZone?: string): string {
   const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
-    date.getHours(),
-  )}:${pad(date.getMinutes())}`;
+  if (!timeZone) {
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+      date.getHours(),
+    )}:${pad(date.getMinutes())}`;
+  }
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((value) => value.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}`;
+}
+
+/** Default publish slot, expressed as wall time in the working zone. */
+export function nextScheduleValue(now: Date, timeZone: string, leadMs = 10 * 60_000): string {
+  return toDateTimeLocalValue(new Date(now.getTime() + leadMs), timeZone);
 }

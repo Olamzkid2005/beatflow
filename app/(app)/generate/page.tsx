@@ -28,7 +28,7 @@ import {
 import { addHistoryEntry } from "@/lib/history";
 import { readSettings } from "@/lib/settings";
 import { useBeforeUnloadWarning } from "@/lib/use-before-unload";
-import { browserTimeZone, toDateTimeLocalValue, toUtcIso8601 } from "@/lib/time";
+import { browserTimeZone, nextScheduleValue, toUtcIso8601 } from "@/lib/time";
 import { useChannel } from "@/lib/use-channel";
 import { useNavigationGuard } from "@/lib/use-navigation-guard";
 import {
@@ -66,8 +66,19 @@ const TEST_TITLE = "BeatFlow M0 test — 5 seconds";
 const DEFAULT_DESCRIPTION = "M0 pipeline proof for BeatFlow.";
 const subscribe = () => () => {};
 
-function defaultSchedule(): string {
-  return toDateTimeLocalValue(new Date(Date.now() + 10 * 60 * 1000));
+function defaultSchedule(timeZone: string): string {
+  return nextScheduleValue(new Date(Date.now()), timeZone);
+}
+
+/** UTC instant the current wall time resolves to, or null while it is invalid. */
+function utcConfirmation(localValue: string, timeZone: string): string | null {
+  if (!localValue) return null;
+  try {
+    const iso = toUtcIso8601(localValue, timeZone);
+    return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
+  } catch {
+    return null;
+  }
 }
 
 /** Kept out of the component so the React compiler sees no clock read in render analysis. */
@@ -137,7 +148,8 @@ function UploadStudio() {
     () => defaults.descriptionTemplate.trim() || DEFAULT_DESCRIPTION,
   );
   const [tags, setTags] = useState<string[]>(() => [...defaults.defaultTags]);
-  const [schedule, setSchedule] = useState(defaultSchedule);
+  // Resolve the working zone before the default: the input holds wall time in
+  // that zone, not in the browser's zone.
   const [timeZone] = useState(() => {
     if (!defaults.timezone) return browserTimeZone();
     try {
@@ -147,6 +159,7 @@ function UploadStudio() {
       return browserTimeZone();
     }
   });
+  const [schedule, setSchedule] = useState(() => defaultSchedule(timeZone));
   const [selection, setSelection] = useState<UploadSelection | null>(null);
   const file = selection?.file ?? null;
   const [chunkSize, setChunkSize] = useState(DEFAULT_CHUNK_SIZE);
@@ -383,6 +396,7 @@ function UploadStudio() {
   }
 
   const descriptionBytes = new TextEncoder().encode(description).length;
+  const scheduleUtc = utcConfirmation(schedule, timeZone);
   const oneRequest = Boolean(file && file.size <= chunkSize);
   const channelTone = channelError ? "danger" : channel ? "success" : "neutral";
 
@@ -827,6 +841,19 @@ function UploadStudio() {
                     onChange={(event) => setSchedule(event.target.value)}
                   />
                 </Field>
+                {schedule && scheduleUtc ? (
+                  <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-outline">
+                    Sends as {scheduleUtc} · wall time in {timeZone}
+                  </p>
+                ) : schedule ? (
+                  <p className="text-xs leading-5 text-error">
+                    This time is not valid in {timeZone}. Choose another time.
+                  </p>
+                ) : (
+                  <p className="text-xs leading-5 text-on-surface-variant">
+                    No schedule · uploads as unlisted immediately
+                  </p>
+                )}
                 <p className="text-xs leading-5 text-on-surface-variant">
                   Sent as UTC ISO 8601 and kept private until publication. Clear the field to
                   upload as unlisted immediately.
