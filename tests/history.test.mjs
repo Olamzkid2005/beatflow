@@ -88,14 +88,53 @@ test("the first read migrates the previous localStorage entries exactly once", a
   assert.equal((await history.list()).length, 3);
 });
 
-test("migration leaves an existing store alone and still clears the legacy key", async () => {
+test("migration merges legacy rows into an existing store without overwriting it", async () => {
   let cleared = 0;
   const history = createHistory({
-    backend: createMemoryBackend([entry("already-here", "2026-10-17T10:00:00Z")]),
-    legacy: { read: () => [entry("legacy")], clear: () => { cleared += 1; } },
+    backend: createMemoryBackend([
+      entry("already-here", "2026-10-17T10:00:00Z"),
+      entry("same", "2026-10-17T10:00:00Z", { privacyStatus: "private" }),
+    ]),
+    legacy: {
+      read: () => [entry("legacy", "2026-10-01T10:00:00Z"), entry("same", "2026-09-01T10:00:00Z")],
+      clear: () => { cleared += 1; },
+    },
   });
-  assert.deepEqual((await history.list()).map((row) => row.videoId), ["already-here"]);
+  const rows = await history.list();
+  assert.deepEqual(rows.map((row) => row.videoId), ["already-here", "same", "legacy"]);
+  assert.equal(rows.find((row) => row.videoId === "same").privacyStatus, "private");
+  assert.equal(cleared, 1, "the merged legacy key is cleared only after the writes commit");
+});
+
+test("a failed migration keeps the legacy copy and succeeds when retried", async () => {
+  let cleared = 0;
+  let legacy = [entry("legacy-1", "2026-10-01T10:00:00Z"), entry("legacy-2", "2026-10-02T10:00:00Z")];
+  const inner = createMemoryBackend();
+  let failing = true;
+  let puts = 0;
+  const backend = {
+    list: () => inner.list(),
+    put: async (value) => {
+      puts += 1;
+      if (failing && puts === 1) throw new Error("IndexedDB write failed");
+      await inner.put(value);
+    },
+    remove: (ids) => inner.remove(ids),
+    clear: () => inner.clear(),
+  };
+  const history = createHistory({
+    backend,
+    legacy: { read: () => legacy, clear: () => { cleared += 1; legacy = null; } },
+  });
+
+  await assert.rejects(history.list(), /IndexedDB write failed/);
+  assert.equal(cleared, 0, "a failed migration must not delete the only copy");
+  assert.deepEqual(await inner.list(), [], "nothing was committed before the failure");
+
+  failing = false;
+  assert.deepEqual((await history.list()).map((row) => row.videoId), ["legacy-2", "legacy-1"]);
   assert.equal(cleared, 1);
+  assert.equal((await history.list()).length, 2, "retrying does not duplicate rows");
 });
 
 /**

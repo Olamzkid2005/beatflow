@@ -70,6 +70,7 @@ export function createHistory({
   legacy?: LegacyHistoryStorage;
 }): HistoryController {
   let migrated = legacy === undefined;
+  let migration: Promise<void> | null = null;
   const read = async () => normalizeEntries(await backend.list());
 
   /**
@@ -83,18 +84,32 @@ export function createHistory({
     await backend.remove(all.slice(MAX_ENTRIES).map((entry) => entry.videoId));
   }
 
-  /** Moves the entries the previous localStorage version wrote, once. */
-  async function migrate(): Promise<void> {
-    if (migrated || !legacy) return;
-    migrated = true;
-    try {
-      if ((await backend.list()).length > 0) return;
-      const previous = legacy.read();
-      const incoming = Array.isArray(previous) ? normalizeEntries(previous).reverse() : [];
-      for (const entry of incoming) await backend.put(entry);
-    } finally {
-      legacy.clear();
+  /**
+   * Moves the entries the previous localStorage version wrote. The legacy key
+   * is cleared only after every row is durably committed: if a write fails the
+   * old copy must stay available for the next attempt. Existing IndexedDB rows
+   * win over a legacy row with the same video ID, so retrying is idempotent.
+   */
+  async function runMigration(): Promise<void> {
+    const previous = legacy?.read();
+    const incoming = Array.isArray(previous) ? normalizeEntries(previous) : [];
+    const existingIds = new Set(sortEntries(await backend.list()).map((entry) => entry.videoId));
+    for (const entry of incoming) {
+      if (existingIds.has(entry.videoId)) continue;
+      await backend.put(entry);
+      existingIds.add(entry.videoId);
     }
+    legacy?.clear();
+    migrated = true;
+  }
+
+  /** One attempt at a time; a rejection leaves the legacy copy retryable. */
+  function migrate(): Promise<void> {
+    if (migrated || !legacy) return Promise.resolve();
+    migration ??= runMigration().finally(() => {
+      migration = null;
+    });
+    return migration;
   }
 
   return {

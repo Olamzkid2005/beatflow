@@ -24,7 +24,7 @@ const sleep = (ms) => new Promise((resolvePromise) => setTimeout(resolvePromise,
 
 const PAGE = `<!doctype html><meta charset="utf-8"><title>F06 durability check</title>
 <p id="status">running…</p><script type="module">
-import { createIndexedDbBackend } from "/history-store.js";
+import { createHistory, createIndexedDbBackend } from "/history-store.js";
 
 /**
  * Wraps IndexedDB so a transaction can be aborted in the same tick its
@@ -32,11 +32,11 @@ import { createIndexedDbBackend } from "/history-store.js";
  * for a durable write.
  */
 function abortingFactory(flag) {
-  const wrapRequest = (request, tx) => {
+  const wrapRequest = (request, tx, mode) => {
     // Registered at creation so it fires even when the adapter attaches no
     // request handler (remove issues deletes and waits for the transaction).
     request.addEventListener("success", () => {
-      if (flag.abort) {
+      if (flag.abort && (mode === "readwrite" || flag.scope === "all")) {
         try { tx.abort(); } catch (error) { flag.abortErrors.push(String(error)); }
       }
     });
@@ -60,10 +60,10 @@ function abortingFactory(flag) {
         objectStore(name) {
           const store = tx.objectStore(name);
           return {
-            getAll: () => wrapRequest(store.getAll(), tx),
-            put: (value) => wrapRequest(store.put(value), tx),
-            delete: (key) => wrapRequest(store.delete(key), tx),
-            clear: () => wrapRequest(store.clear(), tx),
+            getAll: () => wrapRequest(store.getAll(), tx, mode),
+            put: (value) => wrapRequest(store.put(value), tx, mode),
+            delete: (key) => wrapRequest(store.delete(key), tx, mode),
+            clear: () => wrapRequest(store.clear(), tx, mode),
           };
         },
       };
@@ -105,7 +105,7 @@ const rejected = async (promise, pattern) => {
 
 async function run() {
   const dbName = "beatflow-f06-" + crypto.randomUUID();
-  const flag = { abort: true, abortErrors: [] };
+  const flag = { abort: true, scope: "write", abortErrors: [] };
   const aborting = createIndexedDbBackend(abortingFactory(flag), dbName);
   const normal = createIndexedDbBackend(indexedDB, dbName);
   const checks = {};
@@ -125,6 +125,22 @@ async function run() {
   // Reopen proves the successful write is durable, not just cached in a connection.
   const reopened = createIndexedDbBackend(indexedDB, dbName);
   checks.reopenSeesCommittedRow = (await reopened.list()).map((row) => row.videoId).join(",") === "kept";
+
+  // F05: a failing legacy migration must keep the only copy and retry cleanly.
+  const legacy = { rows: [entry("legacy-1"), entry("legacy-2")], cleared: 0 };
+  const migration = createHistory({
+    backend: createIndexedDbBackend(abortingFactory(flag), "beatflow-f05-" + crypto.randomUUID()),
+    legacy: {
+      read: () => legacy.rows,
+      clear: () => { legacy.cleared += 1; legacy.rows = null; },
+    },
+  });
+  checks.failedMigrationRejected = await rejected(migration.list(), /abort/i);
+  checks.failedMigrationKeptLegacy = legacy.cleared === 0 && Array.isArray(legacy.rows);
+  flag.abort = false;
+  checks.migrationRetryCopiedRows =
+    (await migration.list()).map((row) => row.videoId).sort().join(",") === "legacy-1,legacy-2";
+  checks.migrationRetryClearedLegacyOnce = legacy.cleared === 1;
   checks.abortDidNotThrow = flag.abortErrors.length === 0;
   checks.dbName = dbName;
   return checks;
@@ -260,9 +276,10 @@ try {
 
   const browser = await send("Browser.getVersion");
   console.log(
-    `F06 PASS — ${browser.product}\n` +
+    `F06/F05 PASS — ${browser.product}\n` +
       `  aborted put/clear/remove rejected with nothing committed\n` +
       `  committed write survived reopen\n` +
+      `  failed migration kept the legacy copy and retried once\n` +
       `  abort did not throw; test database ${result.checks.dbName}`,
   );
 } catch (error) {

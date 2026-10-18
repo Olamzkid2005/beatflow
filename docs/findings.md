@@ -432,4 +432,12 @@ Append-only. A repair is listed only with the evidence from this runbook; findin
 - `npm run idb:check` (real Chrome 155.0.8059.80, real IndexedDB): aborted `put`, `clear` and `remove` all reject with nothing changed; a committed write is visible after reopening the database; aborting did not throw. This reproduces the exact request-success-then-abort ordering from the finding.
 - Node tests use a minimal fake that also rolls back on abort; its ordering is a model, not proof of browser semantics. The Chrome check is the authoritative evidence.
 
-**Still open:** F05 migration still clears the legacy key after failure. F06 makes the transaction signal honest, but migration retry/merge behavior is a separate fix and must be done next (see the dependency note above). Larger memory/performance and deployed-Google gates are unaffected.
+**Still open:** F05 at the time of this entry (fixed below). Larger memory/performance and deployed-Google gates are unaffected.
+
+### F05 — Failed migration keeps legacy history — **PASS**, 18 October 2026
+
+Migration now reads the legacy rows, skips IDs already present, writes the rest through the durable backend, and calls `legacy.clear()` only after every write resolves. The legacy key stays on failure, and an in-flight promise plus a `migrated` flag make success once-only while allowing a retry after rejection. Existing IndexedDB rows win over a legacy row with the same video ID, so retries are idempotent.
+
+- `tests/history.test.mjs`: failed write rejects, legacy remains and nothing is committed; retry copies both rows exactly once. Existing-store migration now merges instead of silently dropping legacy rows, and does not overwrite a newer stored row. History file: **11/11 passed**.
+- `npm run idb:check` real Chrome: the migration's write is aborted after request success, `legacy.clear()` is not called, then the same controller retries successfully and clears exactly once.
+- **Changed decision:** migration into a non-empty store now merges legacy entries rather than treating the store as authoritative and discarding the old copy. This follows the finding's requirement to decide explicitly instead of dropping data.
