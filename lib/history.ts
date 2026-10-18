@@ -20,6 +20,7 @@ export { MAX_ENTRIES };
 let controller: HistoryController | null = null;
 /** False once this session had to use memory because IndexedDB was unavailable. */
 let durable = true;
+let channel: BroadcastChannel | null = null;
 
 function legacyStorage() {
   if (typeof window === "undefined") return undefined;
@@ -50,13 +51,36 @@ function history(): HistoryController {
   return controller;
 }
 
+function ensureChannel(): void {
+  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined" || channel) return;
+  channel = new BroadcastChannel("beatflow-history");
+  // Node exposes BroadcastChannel too; do not let tests hang on it.
+  (channel as BroadcastChannel & { unref?: () => void }).unref?.();
+  // IndexedDB writes do not emit `storage`; tell other tabs explicitly.
+  channel.onmessage = () => window.dispatchEvent(new Event("beatflow:history"));
+}
+
 function announce() {
+  ensureChannel();
   window.dispatchEvent(new Event("beatflow:history"));
+  channel?.postMessage("changed");
+}
+
+/** Moves any in-memory receipts back to IndexedDB once it becomes available. */
+async function retryDurable(extra?: UploadHistoryEntry): Promise<boolean> {
+  const rows = controller ? await controller.list() : [];
+  const fresh = createHistory({ backend: createIndexedDbBackend() });
+  for (const row of rows) await fresh.add(row);
+  if (extra) await fresh.add(extra);
+  controller = fresh;
+  durable = true;
+  return true;
 }
 
 export async function readHistory(): Promise<UploadHistoryEntry[]> {
   if (typeof window === "undefined") return [];
   try {
+    if (!durable) await retryDurable().catch(() => {});
     return await history().list();
   } catch {
     return [];
@@ -71,9 +95,14 @@ export async function readHistory(): Promise<UploadHistoryEntry[]> {
 export async function addHistoryEntry(entry: UploadHistoryEntry): Promise<boolean> {
   if (typeof window === "undefined") return false;
   try {
+    if (!durable) {
+      await retryDurable(entry);
+      announce();
+      return true;
+    }
     await history().add(entry);
     announce();
-    return durable;
+    return true;
   } catch {
     // A failed async open/write still must not lose the receipt for this
     // session: keep it in memory and tell the user it is not durable.
@@ -91,17 +120,28 @@ export async function addHistoryEntry(entry: UploadHistoryEntry): Promise<boolea
 
 export async function clearHistory(): Promise<void> {
   if (typeof window === "undefined") return;
-  // Let failures reject: the page must not show an empty list it did not clear.
+  // Never imply the durable rows were cleared when only memory is available.
+  if (!durable) throw new Error("History storage is unavailable; nothing was cleared.");
   await history().clear();
   announce();
 }
 
 export function historyStatus(
   entry: UploadHistoryEntry,
-): "scheduled" | "publish-time-passed" | "unlisted" | "unknown" {
+): "scheduled" | "published" | "publish-time-passed" | "unlisted" | "unknown" | "failed" {
   // A confirmed recovery never read the video's real release state.
-  if (entry.privacyStatus === "unknown") return "unknown";
-  if (!entry.publishAt) return "unlisted";
-  // Passing the scheduled time is not proof that YouTube published it.
+  if (entry.privacyStatus === "unknown" && !entry.checkedAt) return "unknown";
+  if (
+    entry.failureReason ||
+    entry.uploadStatus === "failed" ||
+    entry.uploadStatus === "rejected" ||
+    entry.processingStatus === "failed"
+  ) {
+    return "failed";
+  }
+  // A real status check proves publication; a timestamp alone does not.
+  if (entry.checkedAt && entry.privacyStatus === "public") return "published";
+  if (entry.checkedAt && entry.privacyStatus === "unlisted") return "unlisted";
+  if (!entry.publishAt) return entry.checkedAt ? "unlisted" : "unknown";
   return Date.parse(entry.publishAt) > Date.now() ? "scheduled" : "publish-time-passed";
 }

@@ -46,14 +46,19 @@ asks `POST /api/youtube/latest-upload`, which looks at the channel's uploads pla
 (`channels.list` + `playlistItems.list`, 2 quota units, never `search.list`) and returns
 every same-title upload inside the attempt window. Nothing is recorded until the owner
 confirms the right candidate; a miss leaves the outcome unknown. A confirmed ID keeps its
-privacy and schedule marked unverified instead of copying the request's intent. Still
-open: a real run against the owner's channel.
+privacy and schedule marked unverified instead of copying the request's intent. History now
+also has **Refresh from YouTube**, which reads the real privacy, upload, processing and
+schedule state through `POST /api/youtube/video-status` (one `videos.list` call) and stores
+it durably; publication is only claimed after that check. Still open: a real run against
+the owner's channel.
 
 **M4 — polish (in progress).** Producer defaults live in `/settings` and seed the next
 upload. A finished render is only released when the user agrees — replacing or discarding
 it asks first — and the tab warns before closing or reloading while a render or upload is
-running. An unreadable photo blocks the render with a clear message instead of failing
-later. Still to review on a real device.
+running. A render and upload are rejected before decoding when a photo exceeds 32 MP or
+audio exceeds 64 MiB / 15 minutes; large photos are downscaled during decode. The upload
+lifecycle lives in `lib/use-upload-job.ts`, and the form's hints/errors are linked with
+`aria-describedby`. Still to review on a real device; a full WCAG audit is not done.
 
 **M2 — template engine (in progress).** Templates are data, validated by zod v1 before
 anything renders: `First Light` (lower third), `Pulse` (centred title) and `Grid`

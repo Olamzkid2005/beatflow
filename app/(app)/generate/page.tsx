@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 
 import { RenderStudio } from "@/components/render-studio";
 import { Icon } from "@/components/ui/icon";
@@ -25,42 +25,11 @@ import {
   releaseArtifact,
   type UploadSelection,
 } from "@/lib/artifact-ownership";
-import { addHistoryEntry } from "@/lib/history";
 import { readSettings } from "@/lib/settings";
-import { useBeforeUnloadWarning } from "@/lib/use-before-unload";
 import { browserTimeZone, nextScheduleValue, toUtcIso8601 } from "@/lib/time";
 import { useChannel } from "@/lib/use-channel";
-import { useNavigationGuard } from "@/lib/use-navigation-guard";
-import {
-  CHUNK_ALIGNMENT,
-  DEFAULT_CHUNK_SIZE,
-  UploadOutcomeUnknownError,
-  uploadToResumableSession,
-  type UploadProgress,
-} from "@/lib/youtube/uploader";
-
-type UploadResult = {
-  videoId: string;
-  publishAt: string | null;
-  privacyStatus: string;
-  /** True when the ID came from the channel lookup, not the upload response. */
-  recovered?: boolean;
-};
-
-type UploadAttempt = {
-  title: string;
-  publishAt: string | null;
-  privacyStatus: string;
-  startedAt: string;
-  /** Set when the response became unreadable; bounds the candidate search. */
-  failedAt?: string;
-};
-
-type RecoveryCandidate = {
-  videoId: string;
-  title: string;
-  publishedAt: string;
-};
+import { useUploadJob } from "@/lib/use-upload-job";
+import { CHUNK_ALIGNMENT, DEFAULT_CHUNK_SIZE } from "@/lib/youtube/uploader";
 
 const subscribe = () => () => {};
 
@@ -165,255 +134,54 @@ function UploadStudio() {
     }
   });
   const [schedule, setSchedule] = useState(() => defaultSchedule(timeZone));
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [selection, setSelection] = useState<UploadSelection | null>(null);
   const file = selection?.file ?? null;
   const [chunkSize, setChunkSize] = useState(DEFAULT_CHUNK_SIZE);
   const [dragging, setDragging] = useState(false);
-
-  const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState<UploadProgress | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [outcomeUnknown, setOutcomeUnknown] = useState(false);
-  const [result, setResult] = useState<UploadResult | null>(null);
-  const [recovering, setRecovering] = useState(false);
-  const [candidates, setCandidates] = useState<RecoveryCandidate[] | null>(null);
   const [immediatePrivacy, setImmediatePrivacy] = useState<"unlisted" | "public">("unlisted");
-  const [historyWarning, setHistoryWarning] = useState<string | null>(null);
 
-  const abortRef = useRef<AbortController | null>(null);
-  const attemptRef = useRef<UploadAttempt | null>(null);
+  const {
+    busy,
+    progress,
+    error,
+    outcomeUnknown,
+    result,
+    recovering,
+    candidates,
+    historyWarning,
+    startUpload,
+    recoverUpload,
+    confirmRecovered,
+    cancelUpload,
+  } = useUploadJob();
   const titleTouchedRef = useRef(false);
 
-  useEffect(() => {
-    return () => {
-      abortRef.current?.abort();
-    };
-  }, []);
-
-  // The tab must stay open until YouTube has the file (spec section 7).
-  useBeforeUnloadWarning(busy);
-  useNavigationGuard(
-    busy,
-    "An upload is still in progress. Leaving this page can lose the transfer progress. Leave anyway?",
-  );
-
-  /** Records the receipt locally; a storage failure must not hide the upload. */
-  function saveHistory(entry: Parameters<typeof addHistoryEntry>[0]) {
-    void addHistoryEntry(entry).then((saved) => {
-      if (!saved) {
-        setHistoryWarning(
-          "The video reached YouTube, but this browser could not save it to local history. Copy the video ID before leaving.",
-        );
-      }
-    });
-  }
-
-  async function startUpload(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (abortRef.current) return;
-
-    setError(null);
-    setOutcomeUnknown(false);
-    setResult(null);
-    setCandidates(null);
-    setHistoryWarning(null);
-    setProgress(null);
-
-    if (!file) {
-      setError("Choose a rendered MP4 before starting the upload.");
-      return;
-    }
-    if (file.size === 0) {
-      setError("That file is empty. Choose a different MP4.");
-      return;
-    }
-    if (!title.trim()) {
-      setError("Add a title before uploading.");
-      return;
-    }
 
     let publishAt: string | null = null;
     try {
       publishAt = schedule ? toUtcIso8601(schedule, timeZone) : null;
       assertFutureSchedule(publishAt);
-    } catch (scheduleError) {
-      setError(scheduleError instanceof Error ? scheduleError.message : "Invalid schedule.");
+    } catch (scheduleFailure) {
+      setScheduleError(
+        scheduleFailure instanceof Error ? scheduleFailure.message : "Invalid schedule.",
+      );
       return;
     }
+    setScheduleError(null);
     // Scheduling always publishes private until the chosen instant; an
     // immediate upload keeps the owner's explicit visibility choice.
-    const privacyStatus = publishAt ? "private" : immediatePrivacy;
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-    // Records what the outcome lookup needs if the upload response is unreadable.
-    attemptRef.current = {
-      title: title.trim(),
+    await startUpload({
+      file,
+      title,
+      description,
+      tags,
       publishAt,
-      privacyStatus,
-      startedAt: new Date().toISOString(),
-    };
-    setBusy(true);
-
-    try {
-      const initResponse = await fetch("/api/youtube/init-upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
-        body: JSON.stringify({
-          metadata: {
-            title,
-            description,
-            tags,
-            privacyStatus,
-            publishAt,
-          },
-          fileSize: file.size,
-        }),
-      });
-
-      const initBody = await initResponse.json();
-      if (!initResponse.ok) {
-        const details = Array.isArray(initBody.issues)
-          ? initBody.issues
-              .map((issue: { message?: string }) => issue.message)
-              .filter(Boolean)
-              .join(" ")
-          : "";
-        throw new Error(
-          details || initBody.error || `Could not start the upload (${initResponse.status})`,
-        );
-      }
-
-      controller.signal.throwIfAborted();
-      if (typeof initBody.sessionUri !== "string") {
-        throw new Error("YouTube did not provide an upload session.");
-      }
-
-      const videoId = await uploadToResumableSession({
-        sessionUri: initBody.sessionUri,
-        file,
-        chunkSize,
-        signal: controller.signal,
-        onProgress: setProgress,
-      });
-
-      controller.signal.throwIfAborted();
-
-      const completed: UploadResult = {
-        videoId,
-        publishAt,
-        privacyStatus,
-      };
-      setResult(completed);
-
-      saveHistory({
-        videoId,
-        title: title.trim(),
-        channelTitle: channel?.title ?? null,
-        publishAt,
-        privacyStatus: completed.privacyStatus,
-        createdAt: new Date().toISOString(),
-      });
-    } catch (uploadError) {
-      if (controller.signal.aborted) {
-        setProgress(null);
-        setError(
-          "Upload cancelled. If YouTube already accepted it, cancellation does not remove the video; check YouTube Studio before uploading again.",
-        );
-      } else {
-        const unknown = uploadError instanceof UploadOutcomeUnknownError;
-        setOutcomeUnknown(unknown);
-        if (unknown && attemptRef.current) {
-          attemptRef.current = {
-            ...attemptRef.current,
-            failedAt: new Date().toISOString(),
-          };
-        }
-        setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
-      }
-    } finally {
-      abortRef.current = null;
-      setBusy(false);
-    }
-  }
-
-  /**
-   * The desk cannot read the resumable session's response, so an unknown upload
-   * outcome stays recoverable. The server returns every same-title upload inside
-   * the attempt window; none is adopted until the owner confirms one below.
-   */
-  async function recoverUpload() {
-    const attempt = attemptRef.current;
-    if (!attempt || recovering) return;
-
-    setRecovering(true);
-    setError(null);
-    setCandidates(null);
-    try {
-      const response = await fetch("/api/youtube/latest-upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(30_000),
-        body: JSON.stringify({
-          title: attempt.title,
-          notBefore: attempt.startedAt,
-          notAfter: attempt.failedAt ?? new Date().toISOString(),
-        }),
-      });
-      const body = await response.json().catch(() => null);
-      const rows: unknown[] = Array.isArray(body?.candidates) ? body.candidates : [];
-      const found = rows.filter((row): row is RecoveryCandidate => {
-        if (!row || typeof row !== "object") return false;
-        const candidate = row as Record<string, unknown>;
-        return (
-          typeof candidate.videoId === "string" &&
-          candidate.videoId.length > 0 &&
-          typeof candidate.publishedAt === "string" &&
-          Number.isFinite(Date.parse(candidate.publishedAt))
-        );
-      });
-      if (!response.ok || found.length === 0) {
-        setError(body?.error ?? `No matching upload found (${response.status}).`);
-        return;
-      }
-
-      // Keep the outcome marked unknown until the owner picks one.
-      setCandidates(found);
-    } catch (recoverError) {
-      setError(
-        recoverError instanceof Error ? recoverError.message : "Could not look up the upload.",
-      );
-    } finally {
-      setRecovering(false);
-    }
-  }
-
-  /**
-   * A confirmed ID names the video, but its actual privacy, processing state and
-   * schedule were never readable. Record them as unknown rather than copying the
-   * request's intent into the history.
-   */
-  function confirmRecovered(candidate: RecoveryCandidate) {
-    const attempt = attemptRef.current;
-    if (!attempt) return;
-
-    setCandidates(null);
-    setOutcomeUnknown(false);
-    setError(null);
-    setResult({
-      videoId: candidate.videoId,
-      publishAt: null,
-      privacyStatus: "unknown",
-      recovered: true,
-    });
-    saveHistory({
-      videoId: candidate.videoId,
-      title: attempt.title,
+      privacyStatus: publishAt ? "private" : immediatePrivacy,
+      chunkSize,
       channelTitle: channel?.title ?? null,
-      publishAt: null,
-      privacyStatus: "unknown",
-      createdAt: new Date().toISOString(),
     });
   }
 
@@ -567,7 +335,7 @@ function UploadStudio() {
                     <p className="mt-1 text-xs leading-5 text-on-surface-variant">
                       {file
                         ? `${formatBytes(file.size)} · ${file.type || "video/mp4"} · ready to upload`
-                        : "or click to browse. The M0 proof works best with a 5-second clip."}
+                        : "or click to browse. Choose the MP4 you want to publish."}
                     </p>
                   </div>
                   <span className="rounded-lg border border-outline-variant/70 bg-surface-container-low/80 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-on-surface-variant">
@@ -602,7 +370,7 @@ function UploadStudio() {
                 <p className="mt-1 font-mono text-[10px] text-outline">
                   {file
                     ? `${formatBytes(file.size)} · ${file.type || "video/mp4"}`
-                    : "MP4 · 5 seconds recommended for the M0 proof"}
+                    : "MP4 · rendered or exported file"}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -623,7 +391,7 @@ function UploadStudio() {
                   className={buttonClass({ variant: "ghost", size: "sm" })}
                 >
                   <Icon name="download" className="h-3.5 w-3.5" />
-                  Sample
+                  Sample MP4
                 </a>
               </div>
             </div>
@@ -815,7 +583,7 @@ function UploadStudio() {
 
         </div>
 
-        <form id="upload-form" onSubmit={startUpload} className="flex min-w-0 flex-col gap-5">
+        <form id="upload-form" onSubmit={handleSubmit} className="flex min-w-0 flex-col gap-5">
           <fieldset disabled={busy} className="contents">
             <Card className="p-4 sm:p-5">
               <div className="flex items-center justify-between gap-3">
@@ -885,12 +653,16 @@ function UploadStudio() {
                   label="Publish at"
                   htmlFor="video-schedule"
                   hint={timeZone}
+                  error={scheduleError ?? undefined}
                 >
                   <Input
                     id="video-schedule"
                     type="datetime-local"
                     value={schedule}
-                    onChange={(event) => setSchedule(event.target.value)}
+                    onChange={(event) => {
+                      setSchedule(event.target.value);
+                      setScheduleError(null);
+                    }}
                   />
                 </Field>
                 {schedule && scheduleUtc ? (
@@ -990,7 +762,7 @@ function UploadStudio() {
                   type="button"
                   variant="outline"
                   size="lg"
-                  onClick={() => abortRef.current?.abort()}
+                  onClick={cancelUpload}
                 >
                   <Icon name="close" className="h-4 w-4" />
                   Cancel upload
@@ -1030,8 +802,7 @@ function UploadStudio() {
                   </li>
                   <li className="flex gap-2">
                     <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-outline" />
-                    The M0 sample is a 5-second 1080p MP4 made by{" "}
-                    <code className="font-mono text-on-surface">npm run m0:probe</code>.
+                    Use the sample MP4 above for a quick first test.
                   </li>
                 </ul>
               </div>

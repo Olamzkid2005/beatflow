@@ -10,6 +10,7 @@ process.env.OWNER_EMAIL = "owner@example.com";
 const { GET } = await import("../app/api/youtube/channel/route.ts");
 const { POST } = await import("../app/api/youtube/init-upload/route.ts");
 const { POST: latestUpload } = await import("../app/api/youtube/latest-upload/route.ts");
+const { POST: videoStatus } = await import("../app/api/youtube/video-status/route.ts");
 
 async function request(path, body, email = "owner@example.com") {
   const token = email && await encode({ secret: process.env.AUTH_SECRET, salt: "authjs.session-token", token: { email, accessToken: "fake", expiresAt: Math.floor(Date.now() / 1000) + 3600 } });
@@ -184,6 +185,56 @@ test("upload initialization forwards immediate visibility and rejects a public s
   );
   assert.equal(scheduled.status, 400);
   assert.equal(fetchMock.callCount(), 1, "invalid privacy must reject before contacting Google");
+});
+
+test("video status lookup reads actual privacy, publish time and processing state", async (t) => {
+  const urls = [];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    urls.push(String(url));
+    return Response.json({
+      items: [
+        {
+          id: "dQw4w9WgXcQ",
+          status: {
+            privacyStatus: "public",
+            uploadStatus: "processed",
+            publishAt: "2026-10-18T12:00:00Z",
+          },
+          processingDetails: { processingStatus: "succeeded" },
+        },
+      ],
+    });
+  });
+
+  const response = await videoStatus(
+    await request("/api/youtube/video-status", { videoIds: ["dQw4w9WgXcQ"] }),
+    {},
+  );
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.videos, [
+    {
+      videoId: "dQw4w9WgXcQ",
+      privacyStatus: "public",
+      uploadStatus: "processed",
+      publishAt: "2026-10-18T12:00:00Z",
+      failureReason: null,
+      processingStatus: "succeeded",
+    },
+  ]);
+  assert(urls[0].includes("part=status,processingDetails"));
+  assert(urls[0].includes("id=dQw4w9WgXcQ"));
+
+  const invalid = await videoStatus(
+    await request("/api/youtube/video-status", { videoIds: ["short"] }),
+    {},
+  );
+  assert.equal(invalid.status, 400);
+  const unauthorized = await videoStatus(
+    await request("/api/youtube/video-status", { videoIds: ["dQw4w9WgXcQ"] }, "other@example.com"),
+    {},
+  );
+  assert.equal(unauthorized.status, 403);
 });
 
 test("upload initialization sends only metadata/size and persists auth cookies", async (t) => {

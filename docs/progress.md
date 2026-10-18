@@ -218,3 +218,14 @@ measurable locally, so they were measured instead of deferred.
 - No implementation, installs, deployments, OAuth, real Google calls, or uploads occurred. Only review markdown files were added; all application/baseline artifact files are unchanged.
 - Browser/probe/Next processes created for the review are shut down during final cleanup.
 - Remaining acceptance checks require actual Google project/deployed origin and future M1 implementation: publication/CORS/quota, real MP3/image 3/10-minute renders, VLC/ffprobe validation, unsupported-codec UX and repeat-render peak-memory measurement.
+
+## Session: open hardening list repaired (18 October 2026)
+
+- Image input: PNG/JPEG/WebP/GIF headers are read for dimensions before decode, images above 32 MP are rejected, and large photos use `createImageBitmap` resize options so supporting decoders resize during decode rather than retaining a full-size bitmap. Audio input: 64 MiB compressed and 15-minute limits are enforced before the `AudioBuffer` allocation, using a metadata-only duration probe that times out after 5 s. `tests/budget.test.mjs` covers both guards and the header parser.
+- Audio bitrate: decided as a 288 kbps AAC VBR target, not a hard floor. Real Chrome measurements gave 290 kbps on 10 s dense stereo and 64 kbps on a 2 s sine; `bitrateMode: 'constant'` was byte-identical to the default, so it cannot enforce a floor for AAC. `npm run fps:check` now asserts the dense-stereo measurement stays in the spec's 256–320 kbps range.
+- History: added owner-only `POST /api/youtube/video-status` (`videos.list`, max 50 IDs) and a History **Refresh from YouTube** button. Real `checkedAt` status now drives `published`/`unlisted`/`failed`; a passed timestamp alone no longer claims publication. The production browser check drives the route, sees the badge change, and reloads to confirm the status was stored in IndexedDB.
+- IndexedDB: blocked upgrades reject instead of hanging, `versionchange` closes the database, failed opens are retried, memory-fallback rows flush into IndexedDB on the next access, and a `BroadcastChannel` prompts other tabs to reread. A two-tab blocked-upgrade replay was not run.
+- Accessibility: the template picker uses three native radios in a labelled radiogroup, `Field` links hints/errors with `aria-describedby` and sets `aria-invalid`, and `TagInput` forwards the description. The production browser check asserts the radios and hint links. No full WCAG audit.
+- Maintainability: upload orchestration/state moved to `lib/use-upload-job.ts`; `app/(app)/generate/page.tsx` is 815 lines (was 1043) and the extracted flow still passes the full browser replay.
+- Removed the M0 demo copy from the studio, home, shell and sample links.
+- Verification: `npm test` 81/81, `tsc --noEmit`, `eslint`, `next build`, `npm run fps:check`, `npm run upload:check` 25/25, and `npm run idb:check` all pass. Deployed Google behavior remains open in `docs/M0-FINDINGS.md`.

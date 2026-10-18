@@ -14,6 +14,11 @@ export type UploadHistoryEntry = {
   publishAt: string | null;
   privacyStatus: string;
   createdAt: string;
+  /** Present after a real YouTube status check. */
+  uploadStatus?: string | null;
+  processingStatus?: string | null;
+  failureReason?: string | null;
+  checkedAt?: string | null;
 };
 
 export type HistoryBackend = {
@@ -44,7 +49,11 @@ export function isHistoryEntry(value: unknown): value is UploadHistoryEntry {
     (typeof entry.channelTitle === "string" || entry.channelTitle === null) &&
     (typeof entry.publishAt === "string" || entry.publishAt === null) &&
     typeof entry.privacyStatus === "string" &&
-    typeof entry.createdAt === "string"
+    typeof entry.createdAt === "string" &&
+    (entry.uploadStatus === undefined || entry.uploadStatus === null || typeof entry.uploadStatus === "string") &&
+    (entry.processingStatus === undefined || entry.processingStatus === null || typeof entry.processingStatus === "string") &&
+    (entry.failureReason === undefined || entry.failureReason === null || typeof entry.failureReason === "string") &&
+    (entry.checkedAt === undefined || entry.checkedAt === null || typeof entry.checkedAt === "string")
   );
 }
 
@@ -162,7 +171,8 @@ export function createIndexedDbBackend(
   let dbPromise: Promise<IDBDatabase> | null = null;
 
   function open(): Promise<IDBDatabase> {
-    dbPromise ??= new Promise((resolve, reject) => {
+    if (dbPromise) return dbPromise;
+    const attempt = new Promise<IDBDatabase>((resolve, reject) => {
       const request = factory.open(dbName, 1);
       request.onupgradeneeded = () => {
         const db = request.result;
@@ -170,8 +180,23 @@ export function createIndexedDbBackend(
           db.createObjectStore(storeName, { keyPath: "videoId" });
         }
       };
-      request.onsuccess = () => resolve(request.result);
+      request.onblocked = () =>
+        reject(new Error("The history database upgrade is blocked by another tab."));
+      request.onsuccess = () => {
+        const db = request.result;
+        // Let another tab upgrade: close now and reopen lazily on the next call.
+        db.onversionchange = () => {
+          db.close();
+          dbPromise = null;
+        };
+        resolve(db);
+      };
       request.onerror = () => reject(request.error ?? new Error("Could not open the history database."));
+    });
+    // A failed open must not poison every later retry with the same rejection.
+    dbPromise = attempt.catch((error) => {
+      dbPromise = null;
+      throw error;
     });
     return dbPromise;
   }

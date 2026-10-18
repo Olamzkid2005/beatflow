@@ -69,7 +69,7 @@ export default async function Home() {
         <div>
           <Badge tone="primary">
             <StatusDot />
-            M0 · Owner pipeline
+            Owner-only studio
           </Badge>
 
           <h1 className="mt-6 max-w-2xl text-balance text-4xl font-semibold leading-[1.03] tracking-[-0.045em] sm:text-6xl">

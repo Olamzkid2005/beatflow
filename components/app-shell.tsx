@@ -83,7 +83,7 @@ export function AppShell({ user, children }: { user: AppShellUser; children: Rea
           <div className="mx-1 rounded-xl border border-outline-variant bg-surface-container-lowest/80 p-3">
             <div className="flex items-center justify-between">
               <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-outline">Pipeline</span>
-              <span className="font-mono text-[11px] text-primary">M0</span>
+              <span className="font-mono text-[11px] text-primary">Studio</span>
             </div>
             <div className="mt-3 flex items-center gap-2 text-xs text-on-surface">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/15 text-primary">

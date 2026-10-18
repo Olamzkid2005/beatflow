@@ -70,6 +70,7 @@ window.runFpsCheck = async () => {
     }
     if (sound) {
       checks.audioCodec = await sound.getCodec();
+      checks.audioBitrate = (await sound.computePacketStats()).averageBitrate;
       checks.sampleRate = sound.sampleRate;
       checks.channels = sound.numberOfChannels;
       checks.audioDuration = await sound.computeDuration();
@@ -120,6 +121,36 @@ window.runAbortCheck = async () => {
       errorName,
       hasBlob: Boolean(blob),
     };
+  } catch (error) {
+    return { ok: false, error: String(error?.stack ?? error) };
+  }
+};
+
+window.runAudioBitrateCheck = async () => {
+  try {
+    const canvas = new OffscreenCanvas(640, 360);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#222";
+    ctx.fillRect(0, 0, 640, 360);
+    // Dense, deterministic broadband audio stands in for mastered music: a pure
+    // sine is the easiest possible input and legitimately encodes far below the
+    // 288 kbps VBR target.
+    const audio = new AudioBuffer({ length: 48_000 * 10, sampleRate: 48_000, numberOfChannels: 2 });
+    for (let channel = 0; channel < 2; channel++) {
+      const data = audio.getChannelData(channel);
+      let seed = 1_234_567 + channel;
+      for (let i = 0; i < data.length; i++) {
+        seed = (seed * 1_664_525 + 1_013_904_223) % 4_294_967_296;
+        data[i] = (seed / 4_294_967_296) * 2 - 1;
+      }
+    }
+    const blob = await encodeMp4({ canvas, audio, fps: 1 });
+    const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
+    const track = await input.getPrimaryAudioTrack();
+    const measured = track ? (await track.computePacketStats()).averageBitrate : 0;
+    // Section 5 asks for 256–320 kbps; 288 is the VBR target, so this is a
+    // content-dependent observation, not a guarantee for every input.
+    return { ok: measured >= 256_000 && measured <= 320_000, measured, bytes: blob.size };
   } catch (error) {
     return { ok: false, error: String(error?.stack ?? error) };
   }
@@ -241,6 +272,9 @@ try {
   const abort = await evaluate("window.runAbortCheck()");
   assert.deepEqual(abort, { ok: true, rejected: true, errorName: "AbortError", hasBlob: false });
 
+  const bitrate = await evaluate("window.runAudioBitrateCheck()");
+  assert.equal(bitrate.ok, true, JSON.stringify(bitrate));
+
   const outputDir = await mkdtemp(join(tmpdir(), "beatflow-f08-"));
   const mp4 = Buffer.from(result.bytes);
   await writeFile(join(outputDir, "30fps.mp4"), mp4);
@@ -250,6 +284,8 @@ try {
   console.log(`F08 PASS — ${browser.product}`);
   console.log(`  ${c.videoCodec}/${c.audioCodec}, ${c.width}×${c.height}, ${c.sampleRate} Hz ${c.channels} ch`);
   console.log(`  ${c.videoPackets} video packets at ${c.frameRate} fps, ${c.videoDuration}s`);
+  console.log(`  audio ${Math.round(c.audioBitrate / 1000)} kbps on a 2 s sine (288 kbps VBR target, content-dependent)`);
+  console.log(`  audio ${Math.round(bitrate.measured / 1000)} kbps on 10 s dense stereo (inside the 256–320 kbps contract)`);
   console.log(`  invalid FPS rejected before encoding: ${c.invalidFpsRejected}`);
   console.log("  abort during audio encoding rejects with AbortError and no blob");
   console.log(`  proof: ${join(outputDir, "30fps.mp4")} (${mp4.length} bytes)`);

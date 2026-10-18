@@ -436,20 +436,25 @@ export function RenderStudio({
               {TEMPLATE_PRESETS.map((option) => {
                 const selected = option.id === preset.id;
                 return (
-                  <button
+                  <label
                     key={option.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    disabled={locked}
-                    onClick={() => setPresetId(option.id)}
                     className={cn(
-                      "flex flex-col gap-0.5 rounded-xl border px-3 py-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-50",
+                      "flex flex-col gap-0.5 rounded-xl border px-3 py-2.5 text-left transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/50",
+                      locked && "cursor-not-allowed opacity-50",
                       selected
                         ? "border-primary/50 bg-primary/10"
                         : "border-outline-variant bg-surface-container-lowest/60 hover:border-outline hover:bg-surface-container-high/60",
                     )}
                   >
+                    <input
+                      type="radio"
+                      name="render-template"
+                      value={option.id}
+                      checked={selected}
+                      disabled={locked}
+                      onChange={() => setPresetId(option.id)}
+                      className="sr-only"
+                    />
                     <span className="flex items-center gap-2 text-sm font-medium">
                       {option.template.name}
                       {selected ? <Icon name="check" className="h-3.5 w-3.5 text-primary" /> : null}
@@ -457,7 +462,7 @@ export function RenderStudio({
                     <span className="text-xs leading-5 text-on-surface-variant">
                       {option.description}
                     </span>
-                  </button>
+                  </label>
                 );
               })}
             </div>

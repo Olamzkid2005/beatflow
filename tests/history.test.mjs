@@ -281,11 +281,38 @@ test("release state follows the schedule", () => {
   const past = new Date(Date.now() - 3_600_000).toISOString();
   assert.equal(historyStatus(entry("a", "2026-10-17T10:00:00Z", { publishAt: future })), "scheduled");
   assert.equal(historyStatus(entry("b", "2026-10-17T10:00:00Z", { publishAt: past })), "publish-time-passed");
-  assert.equal(historyStatus(entry("c")), "unlisted");
+  assert.equal(
+    historyStatus(entry("c")),
+    "unknown",
+    "an unchecked immediate upload must not claim a release state",
+  );
   assert.equal(
     historyStatus(entry("d", "2026-10-17T10:00:00Z", { privacyStatus: "unknown" })),
     "unknown",
     "a confirmed recovery must not claim a release state it never read",
+  );
+  assert.equal(
+    historyStatus(
+      entry("e", "2026-10-17T10:00:00Z", {
+        privacyStatus: "public",
+        checkedAt: "2026-10-18T10:00:00Z",
+        uploadStatus: "processed",
+      }),
+    ),
+    "published",
+    "a real public status is the only proof of publication",
+  );
+  assert.equal(
+    historyStatus(
+      entry("f", "2026-10-17T10:00:00Z", {
+        privacyStatus: "private",
+        checkedAt: "2026-10-18T10:00:00Z",
+        uploadStatus: "rejected",
+        failureReason: "copyright",
+      }),
+    ),
+    "failed",
+    "a rejected upload must not read as unlisted",
   );
 });
 

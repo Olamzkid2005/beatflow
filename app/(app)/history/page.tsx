@@ -13,18 +13,21 @@ import {
   StatusDot,
 } from "@/components/ui/primitives";
 import {
+  addHistoryEntry,
   clearHistory,
   historyStatus,
   readHistory,
   type UploadHistoryEntry,
 } from "@/lib/history";
 
-type Filter = "all" | "scheduled" | "publish-time-passed";
+type Filter = "all" | "scheduled" | "published" | "publish-time-passed" | "failed";
 
 const filters: Array<{ value: Filter; label: string }> = [
   { value: "all", label: "All" },
   { value: "scheduled", label: "Scheduled" },
+  { value: "published", label: "Published" },
   { value: "publish-time-passed", label: "Publish time passed" },
+  { value: "failed", label: "Issues" },
 ];
 
 function formatDate(value: string | null): string {
@@ -38,16 +41,24 @@ function formatDate(value: string | null): string {
 }
 
 function statusTone(status: ReturnType<typeof historyStatus>) {
-  return status === "scheduled" ? "tertiary" : "neutral";
+  if (status === "scheduled") return "tertiary";
+  if (status === "published") return "success";
+  if (status === "failed") return "danger";
+  return "neutral";
 }
 
 function statusDot(status: ReturnType<typeof historyStatus>) {
-  return status === "scheduled" ? "tertiary" : "muted";
+  if (status === "scheduled") return "tertiary";
+  if (status === "published") return "success";
+  if (status === "failed") return "danger";
+  return "muted";
 }
 
 function statusLabel(status: ReturnType<typeof historyStatus>) {
   if (status === "scheduled") return "Scheduled";
+  if (status === "published") return "Published";
   if (status === "publish-time-passed") return "Publish time passed";
+  if (status === "failed") return "Upload issue";
   if (status === "unknown") return "Check in Studio";
   return "Unlisted";
 }
@@ -56,6 +67,8 @@ export default function HistoryPage() {
   const [entries, setEntries] = useState<UploadHistoryEntry[] | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [clearError, setClearError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -77,6 +90,54 @@ export default function HistoryPage() {
       window.removeEventListener("storage", refresh);
     };
   }, []);
+
+  async function handleRefresh() {
+    if (!entries?.length || syncing) return;
+    setSyncing(true);
+    setSyncError(null);
+    try {
+      const response = await fetch("/api/youtube/video-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(30_000),
+        body: JSON.stringify({ videoIds: entries.map((entry) => entry.videoId) }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !Array.isArray(body?.videos)) {
+        throw new Error(body?.error ?? `Could not read statuses (${response.status}).`);
+      }
+      const byId = new Map<string, Record<string, unknown>>(
+        body.videos.map((video: Record<string, unknown>) => [String(video.videoId), video]),
+      );
+      const checkedAt = new Date().toISOString();
+      const next = entries.map((entry) => {
+        const status = byId.get(entry.videoId);
+        if (!status) return entry;
+        return {
+          ...entry,
+          privacyStatus: String(status.privacyStatus),
+          publishAt: typeof status.publishAt === "string" ? status.publishAt : null,
+          uploadStatus: typeof status.uploadStatus === "string" ? status.uploadStatus : null,
+          processingStatus:
+            typeof status.processingStatus === "string" ? status.processingStatus : null,
+          failureReason:
+            typeof status.failureReason === "string" ? status.failureReason : null,
+          checkedAt,
+        };
+      });
+      setEntries(next);
+      let durable = true;
+      for (const entry of next) {
+        if (!byId.has(entry.videoId)) continue;
+        durable = (await addHistoryEntry(entry)) && durable;
+      }
+      if (!durable) setSyncError("Statuses refreshed, but this browser could not save them locally.");
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : "Could not refresh video statuses.");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   async function handleClear() {
     if (!window.confirm("Clear all upload history from this browser?")) return;
@@ -150,16 +211,27 @@ export default function HistoryPage() {
         </div>
 
         {entries && entries.length > 0 ? (
-          <Button type="button" variant="ghost" size="sm" onClick={handleClear}>
-            <Icon name="trash" className="h-3.5 w-3.5" />
-            Clear history
-          </Button>
+          <div className="flex flex-wrap items-center gap-1">
+            <Button type="button" variant="outline" size="sm" disabled={syncing} onClick={handleRefresh}>
+              <Icon name="refresh" className="h-3.5 w-3.5" />
+              {syncing ? "Checking YouTube…" : "Refresh from YouTube"}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={handleClear}>
+              <Icon name="trash" className="h-3.5 w-3.5" />
+              Clear history
+            </Button>
+          </div>
         ) : null}
       </div>
 
       {clearError ? (
         <p role="alert" className="rounded-xl border border-error/25 bg-error-container/10 p-3 text-sm text-error">
           {clearError}
+        </p>
+      ) : null}
+      {syncError ? (
+        <p role="alert" className="rounded-xl border border-error/25 bg-error-container/10 p-3 text-sm text-error">
+          {syncError}
         </p>
       ) : null}
 
@@ -209,8 +281,12 @@ export default function HistoryPage() {
                     <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-outline-variant/70 bg-surface-container-lowest text-primary">
                       <Icon
                         name={
-                          status === "publish-time-passed"
-                            ? "clock"
+                          status === "published"
+                            ? "youtube"
+                            : status === "failed"
+                              ? "alert"
+                              : status === "publish-time-passed"
+                                ? "clock"
                             : status === "scheduled"
                               ? "calendar"
                               : status === "unknown"
@@ -275,7 +351,7 @@ export default function HistoryPage() {
 
       <p className="flex items-center gap-2 border-t border-surface-container-highest pt-4 font-mono text-[10px] uppercase tracking-[0.12em] text-outline">
         <Icon name="info" className="h-3.5 w-3.5" />
-        Stored in IndexedDB in this browser · Up to 50 entries · Release state is inferred, not checked with YouTube
+        Stored in IndexedDB in this browser · Up to 50 entries · Refresh reads the actual status from YouTube
       </p>
     </div>
   );

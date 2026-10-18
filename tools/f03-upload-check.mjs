@@ -122,6 +122,11 @@ try {
       pending.set(id, { resolve: done, reject });
       socket.send(JSON.stringify({ id, method, params }));
     });
+  // Fire-and-forget CDP calls can race a navigation that already invalidated
+  // the interception id; a failed continuation must not crash the harness.
+  const fire = (method, params = {}) => {
+    void send(method, params).catch(() => {});
+  };
   const evaluate = async (expression) => {
     const value = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
     if (value.exceptionDetails) throw new Error(value.exceptionDetails.exception?.description ?? value.exceptionDetails.text);
@@ -225,7 +230,7 @@ try {
       uploadBodies.push(request.postData ?? "");
       return;
     }
-    return send("Fetch.continueRequest", { requestId });
+    return fire("Fetch.continueRequest", { requestId });
   };
   const pump = setInterval(() => {
     while (events.length) {
@@ -269,6 +274,24 @@ try {
   )`);
   await goto("/generate");
   await waitFor("document.querySelector('#video-schedule') !== null");
+  const semantics = await evaluate(`(() => {
+    const described = (selector) =>
+      (document.querySelector(selector)?.getAttribute("aria-describedby") ?? "").split(" ").filter(Boolean);
+    return {
+      radios: document.querySelectorAll('input[type="radio"][name="render-template"]').length,
+      group: Boolean(document.querySelector('[role="radiogroup"][aria-label="Template"]')),
+      titleDescribed: described("#video-title"),
+      audioDescribed: described("#render-audio"),
+      hints: ["video-title-hint", "render-audio-hint"].filter((id) => document.getElementById(id)),
+    };
+  })()`);
+  assert.equal(semantics.radios, 3, "template options must be native radio controls");
+  assert.equal(semantics.group, true, "template picker must expose its radio group name");
+  assert(semantics.titleDescribed.includes("video-title-hint"), "the title hint is not linked");
+  assert(semantics.audioDescribed.includes("render-audio-hint"), "the track hint is not linked");
+  assert.equal(semantics.hints.length, 2);
+  record("template picker uses native radios and field hints are programmatically linked");
+
   const scheduleInfo = await evaluate(`(() => {
     const text = document.body.innerText;
     const line = text.split(String.fromCharCode(10)).find((value) => value.toUpperCase().includes("SENDS AS"));
@@ -355,7 +378,7 @@ try {
   const locked = await evaluate(`(() => {
     const discard = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Discard');
     const use = [...document.querySelectorAll('button')].find((b) => b.textContent.includes('Use for upload'));
-    const template = document.querySelector('[role="radio"]');
+    const template = document.querySelector('input[name="render-template"]');
     return {
       discard: discard?.disabled,
       use: use?.disabled,
@@ -497,7 +520,7 @@ try {
         { name: "Access-Control-Allow-Origin", value: origin },
       ],
       body: Buffer.from(JSON.stringify(body)).toString("base64"),
-    });
+    }).catch(() => {});
   await send("Fetch.enable", { patterns: [fetchRule] });
   const recoveryPump = setInterval(() => {
     while (events.length) {
@@ -507,11 +530,30 @@ try {
       if (request.url.includes("/api/youtube/init-upload")) {
         void fulfill(requestId, { sessionUri: "https://upload.example/session" });
       } else if (request.url.startsWith("https://upload.example/")) {
-        void send("Fetch.failRequest", { requestId, errorReason: "Failed" });
+        fire("Fetch.failRequest", { requestId, errorReason: "Failed" });
       } else if (request.url.includes("/api/youtube/latest-upload")) {
-        void fulfill(requestId, { candidates: [candidate] });
+        fire("Fetch.fulfillRequest", {
+          requestId,
+          responseCode: 200,
+          responseHeaders: [
+            { name: "Content-Type", value: "application/json" },
+            { name: "Access-Control-Allow-Origin", value: origin },
+          ],
+          body: Buffer.from(JSON.stringify({ candidates: [candidate] })).toString("base64"),
+        });
+      } else if (request.url.includes("/api/youtube/video-status")) {
+        void fulfill(requestId, {
+          videos: [{
+            videoId: candidate.videoId,
+            privacyStatus: "public",
+            uploadStatus: "processed",
+            publishAt: null,
+            failureReason: null,
+            processingStatus: "succeeded",
+          }],
+        });
       } else {
-        void send("Fetch.continueRequest", { requestId });
+        fire("Fetch.continueRequest", { requestId });
       }
     }
   }, 20);
@@ -541,8 +583,28 @@ try {
   assert.match(await bodyText(), /Privacy unverified/);
   record("history marks recovered release state as unverified");
 
+  await clickText("button", "Refresh from YouTube");
+  await waitFor("!document.body.innerText.includes('Check in Studio')");
+  const refreshedText = await bodyText();
+  assert.match(refreshedText, /Published/);
+  assert.equal(
+    await evaluate("document.body.innerText.includes('Privacy unverified')"),
+    false,
+    "a checked status must replace the unverified placeholder",
+  );
+  record("refreshing history shows the actual YouTube status");
+
   clearInterval(recoveryPump);
   await send("Fetch.disable");
+  // Durability check after interception stops, so the reload cannot race a
+  // paused request that no longer has a valid interception id.
+  const timeOrigin = await evaluate("performance.timeOrigin");
+  await evaluate("location.reload()");
+  await waitFor(`performance.timeOrigin !== ${timeOrigin}`);
+  await waitFor("document.body.innerText.includes('Release history')");
+  await waitFor("!document.body.innerText.includes('Check in Studio')");
+  assert.match(await bodyText(), /Published/);
+  record("the refreshed status survives a reload via IndexedDB");
 
   // F10: a partial transfer that fails must never read as complete.
   await clickText("a", "Studio");
@@ -562,13 +624,13 @@ try {
       } else if (event.params.request.url.includes("/fake-session")) {
         sessionPuts += 1;
         if (sessionPuts === 1) {
-          void send("Fetch.fulfillRequest", {
+          fire("Fetch.fulfillRequest", {
             requestId,
             responseCode: 308,
             responseHeaders: [{ name: "Range", value: "bytes=0-262143" }],
           });
         } else {
-          void send("Fetch.fulfillRequest", {
+          fire("Fetch.fulfillRequest", {
             requestId,
             responseCode: 400,
             responseHeaders: [{ name: "Content-Type", value: "text/plain" }],
@@ -576,7 +638,7 @@ try {
           });
         }
       } else {
-        void send("Fetch.continueRequest", { requestId });
+        fire("Fetch.continueRequest", { requestId });
       }
     }
   }, 20);

@@ -261,13 +261,13 @@ If the second cookie is processed last, it can replace the successful cookie. **
 These are not presented as additional demonstrated production failures:
 
 - **Verified email:** `auth.config.ts:33–34` accepts an exact owner email even when a synthetic profile has `email_verified: false`. Require Google's verified-email assertion for email-based authorization. No forged Google identity or actual owner-gate exploit was demonstrated.
-- **Input resource budget:** `lib/renderer/assets.ts:53–70` fully decodes a photo before downscaling; there is no explicit image pixel limit. `lib/renderer/audio.ts:24–34` rejects overlong audio only after full decoding. Full decoded 48 kHz stereo Float32 audio alone is roughly 220 MiB for ten minutes; image/canvas/encoder/output buffers overlap. Define target-device peak memory and wall-time budgets and reject safely where possible. No new speedup or memory-growth claim is made.
-- **Audio bitrate contract:** the requested bitrate is a VBR target, not proof of encoded 256–320 kbps on every input. Resolve whether the spec means a target or strict rate; test representative music before choosing constant mode.
-- **History truthfulness:** `lib/history.ts:78–81` marks a passed schedule “published” based solely on time. It does not verify processing, publication, deletion, or changed privacy on YouTube. Label it inferred or fetch actual status. Validate stored dates/enums too; current row validation only checks their types.
-- **IndexedDB lifecycle:** handle failed-open retries, blocked upgrades and version changes; consider BroadcastChannel or another intentional mechanism for cross-tab history updates. IndexedDB writes do not emit localStorage `storage` events.
-- **Accessibility:** native radio controls or complete radio-group keyboard behavior would improve the template picker (`components/render-studio.tsx:404–435`). Connect field errors/hints with `aria-describedby` and mark invalid fields. This was an inspection, not a full WCAG audit.
-- **Maintainability:** extract upload orchestration/state from the 823-line page; retain the useful React-free renderer and pure validation/time/storage helpers. A broad rewrite or hosted render infrastructure is not justified.
-- **Documentation/status:** remove M0-only demo instructions and contradictory readiness copy. Keep deployment-dependent gates separate from locally implemented features.
+- **Input resource budget:** `lib/renderer/assets.ts:53–70` fully decodes a photo before downscaling; there is no explicit image pixel limit. `lib/renderer/audio.ts:24–34` rejects overlong audio only after full decoding. Full decoded 48 kHz stereo Float32 audio alone is roughly 220 MiB for ten minutes; image/canvas/encoder/output buffers overlap. Define target-device peak memory and wall-time budgets and reject safely where possible. No new speedup or memory-growth claim is made. **Repaired 18 October 2026** — header pixel cap and pre-decode duration/size caps; see below.
+- **Audio bitrate contract:** the requested bitrate is a VBR target, not proof of encoded 256–320 kbps on every input. Resolve whether the spec means a target or strict rate; test representative music before choosing constant mode. **Decided 18 October 2026** — 288 kbps VBR target, measured 290 kbps on dense stereo; see below.
+- **History truthfulness:** `lib/history.ts:78–81` marks a passed schedule “published” based solely on time. It does not verify processing, publication, deletion, or changed privacy on YouTube. Label it inferred or fetch actual status. Validate stored dates/enums too; current row validation only checks their types. **Repaired 18 October 2026** — explicit `videos.list` status refresh; see below.
+- **IndexedDB lifecycle:** handle failed-open retries, blocked upgrades and version changes; consider BroadcastChannel or another intentional mechanism for cross-tab history updates. IndexedDB writes do not emit localStorage `storage` events. **Repaired 18 October 2026** — see below (blocked-upgrade replay still open).
+- **Accessibility:** native radio controls or complete radio-group keyboard behavior would improve the template picker (`components/render-studio.tsx:404–435`). Connect field errors/hints with `aria-describedby` and mark invalid fields. This was an inspection, not a full WCAG audit. **Named issues repaired 18 October 2026**; a full WCAG audit remains open.
+- **Maintainability:** extract upload orchestration/state from the 823-line page; retain the useful React-free renderer and pure validation/time/storage helpers. A broad rewrite or hosted render infrastructure is not justified. **Repaired 18 October 2026** — `lib/use-upload-job.ts`; the page is 815 lines.
+- **Documentation/status:** remove M0-only demo instructions and contradictory readiness copy. Keep deployment-dependent gates separate from locally implemented features. **Repaired 18 October 2026.**
 
 ## What is working well
 
@@ -531,3 +531,31 @@ Migration now reads the legacy rows, skips IDs already present, writes the rest 
 
 - A passing scheduled time no longer reads as “Published”. `historyStatus` returns `publish-time-passed`, the History badge says “Publish time passed”, and the footer states that release state is inferred rather than checked with YouTube.
 - This does not query YouTube for real processing/privacy/publication state; that remains a documented limitation, not a verified release status.
+
+### Open hardening list — repaired, 18 October 2026
+
+**Input resource budgets — PASS for the guards (not a peak-memory benchmark).** `lib/renderer/assets.ts` reads PNG/JPEG/WebP/GIF dimensions from the file header without decoding pixels, rejects images above 32 MP (~128 MiB RGBA) before `createImageBitmap`, passes `resizeWidth`/`resizeHeight` so decoders that support it resize while decoding (the full-size bitmap is then not retained), and re-checks the decoded bitmap. Unknown formats still decode first, then hit the post-decode cap. `lib/renderer/audio.ts` rejects files above 64 MiB before loading bytes, reads duration from metadata (5 s timeout, no full decode) and rejects over 15 minutes before allocating an `AudioBuffer`; a failed probe falls back to the existing post-decode check. `tests/budget.test.mjs` builds real `File` headers for PNG, JPEG, WebP and an unknown format and covers both budgets. No target-device peak-memory measurement was performed.
+
+**Audio bitrate contract — DECIDED: 288 kbps AAC VBR target.** Measured in Chrome 155.0.8059.80 with Mediabunny 1.61.4 on the real encoder: 10 s dense stereo encoded at **290 kbps**, while a 2 s 440 Hz sine encoded at 64 kbps. That is content, not a configuration failure. `bitrateMode: 'constant'` produced byte-identical output to the default at 192 kbps, so Chromium ignores constant mode for AAC here; promising a hard floor would be false. `npm run fps:check` now encodes 10 s of dense stereo and asserts the measured rate stays inside the spec's 256–320 kbps range, while the 2 s tone is reported as content-dependent. Treat 256–320 kbps as the target range for representative music.
+
+**History truthfulness — PASS, including actual state.** Added owner-only `POST /api/youtube/video-status` (`videos.list` with `status,processingDetails`, at most 50 validated IDs) and a **Refresh from YouTube** action on History. `historyStatus` now returns `published`/`unlisted` only when a real status check set `checkedAt`, reports failed uploads/processing with `failed`, and never treats a passed timestamp as publication. Refreshed state is written back through the existing durable history store. `npm run upload:check` fulfils the status route in production Chrome: the entry changes from “Check in Studio” to “Published”, “Privacy unverified” disappears, and the result survives a full reload through IndexedDB.
+
+**IndexedDB lifecycle — PASS for open/retry/cross-tab, blocked-upgrade replay open.** `lib/history-store.ts` rejects a blocked upgrade instead of hanging, closes on `versionchange` so another tab can upgrade, and no longer caches a failed open forever. `lib/history.ts` retries in-session: memory fallback rows are flushed into IndexedDB on the next read or write, and a `BroadcastChannel` tells other tabs to reread. `npm run idb:check` still passes the aborted-write, committed-write and migration-recovery scenarios. A real two-tab blocked-upgrade/broadcast replay was not run.
+
+**Accessibility — named issues PASS; no full WCAG audit.** The template picker is now three native radio inputs inside a labelled `role="radiogroup"` (arrow keys and focus behave natively), with a visible focus ring on the label. `Field` links hints and errors with `aria-describedby` and sets `aria-invalid` on error; `TagInput` forwards the description to its actual input. `npm run upload:check` asserts the three radios, the group label, and the title/track hint links in the production build. Keyboard-only traversal of the whole app and a WCAG audit remain open.
+
+**Maintainability — PASS.** Upload state and orchestration (session handshake, chunked transfer, progress, cancellation, unknown-outcome recovery, history receipt) moved to `lib/use-upload-job.ts`. `app/(app)/generate/page.tsx` dropped from 1043 to 815 lines and keeps only form/preview rendering. The full browser replay re-verified the extracted behaviour.
+
+**Documentation/status — PASS.** Removed the M0 demo instructions from the studio, home badge, shell label and upload copy, and updated `README.md` and `docs/progress.md`.
+
+Verification run on 18 October 2026 (Chrome 155.0.8059.80):
+
+| Check | Result |
+| --- | --- |
+| `npm test` | 81/81 passed |
+| `npx tsc --noEmit` | Passed |
+| `npm run lint` | Passed |
+| `npm run build` | Passed, `/api/youtube/video-status` generated |
+| `npm run fps:check` | Passed; 290 kbps dense stereo, abort still rejects with `AbortError` |
+| `npm run upload:check` | 25/25 browser assertions in the production build |
+| `npm run idb:check` | Passed |

@@ -11,12 +11,14 @@ export function TagInput({
   onChange,
   placeholder = "Add a tag and press Enter",
   className,
+  "aria-describedby": describedBy,
 }: {
   id?: string;
   value: string[];
   onChange: (tags: string[]) => void;
   placeholder?: string;
   className?: string;
+  "aria-describedby"?: string;
 }) {
   const [draft, setDraft] = useState("");
 
@@ -81,6 +83,7 @@ export function TagInput({
         placeholder={value.length ? "" : placeholder}
         className="min-w-[8rem] flex-1 bg-transparent px-1 text-base text-on-surface outline-none placeholder:text-outline sm:text-sm"
         aria-label="Add a video tag"
+        aria-describedby={describedBy}
       />
     </div>
   );

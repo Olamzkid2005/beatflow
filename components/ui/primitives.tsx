@@ -1,11 +1,14 @@
-import type {
-  ButtonHTMLAttributes,
-  HTMLAttributes,
-  InputHTMLAttributes,
-  LabelHTMLAttributes,
-  ReactNode,
-  SelectHTMLAttributes,
-  TextareaHTMLAttributes,
+import {
+  cloneElement,
+  isValidElement,
+  type ButtonHTMLAttributes,
+  type HTMLAttributes,
+  type InputHTMLAttributes,
+  type LabelHTMLAttributes,
+  type ReactElement,
+  type ReactNode,
+  type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
 } from "react";
 
 import { Icon } from "./icon";
@@ -117,14 +120,35 @@ type FieldProps = {
 };
 
 export function Field({ label, htmlFor, hint, error, className, children }: FieldProps) {
+  const hintId = hint && htmlFor ? `${htmlFor}-hint` : undefined;
+  const errorId = error && htmlFor ? `${htmlFor}-error` : undefined;
+  const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined;
+
+  // A field with a hint or error must expose that text to assistive tech.
+  const control =
+    describedBy && isValidElement(children)
+      ? cloneElement(children as ReactElement<Record<string, unknown>>, {
+          "aria-describedby": describedBy,
+          ...(error ? { "aria-invalid": true } : {}),
+        })
+      : children;
+
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
       <div className="flex items-center justify-between gap-3">
         <Label htmlFor={htmlFor}>{label}</Label>
-        {hint ? <span className="font-mono text-[10px] tracking-wide text-outline">{hint}</span> : null}
+        {hint ? (
+          <span id={hintId} className="font-mono text-[10px] tracking-wide text-outline">
+            {hint}
+          </span>
+        ) : null}
       </div>
-      {children}
-      {error ? <p className="text-xs text-error">{error}</p> : null}
+      {control}
+      {error ? (
+        <p id={errorId} className="text-xs text-error">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
