@@ -1,13 +1,15 @@
 import {
   AudioBufferSource,
   BufferTarget,
-  CanvasSource,
   Mp4OutputFormat,
   Output,
   Quality,
+  VideoSample,
+  VideoSampleSource,
 } from "mediabunny";
 
 import { RENDER_AUDIO, RENDER_VIDEO } from "./capabilities";
+import { BT709_COLOR_SPACE, convertSrgbToBt709 } from "./color";
 import { assertExportCanvas, normalizeFps } from "./validate";
 
 export type EncodeStage = "video" | "audio" | "finalize";
@@ -24,7 +26,10 @@ export type EncodeOptions = {
 /**
  * Encodes the composed canvas plus decoded audio into a fast-start MP4
  * (spec section 5 step 6). The caller owns the canvas; the frame count is
- * derived from the audio duration so both tracks end together.
+ * derived from the audio duration so both tracks end together. The canvas is
+ * read once, converted from the sRGB transfer function to BT.709, and encoded
+ * with an explicit BT.709 colour space so the H.264 SPS and `colr` box are
+ * tagged correctly.
  */
 export async function encodeMp4({
   canvas,
@@ -43,7 +48,13 @@ export async function encodeMp4({
     target,
   });
 
-  const videoSource = new CanvasSource(canvas, {
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("The export canvas has no 2D context to read.");
+  const pixels = convertSrgbToBt709(
+    context.getImageData(0, 0, canvas.width, canvas.height).data,
+  );
+
+  const videoSource = new VideoSampleSource({
     codec: "avc",
     quality: new Quality({ bitrate: RENDER_VIDEO.bitrate }),
     fullCodecString: RENDER_VIDEO.fullCodecString,
@@ -68,7 +79,19 @@ export async function encodeMp4({
       const timestamp = index * frameDuration;
       const length = Math.min(frameDuration, duration - timestamp);
       if (length <= 0) break;
-      await videoSource.add(timestamp, length);
+      const sample = new VideoSample(pixels, {
+        format: "RGBA",
+        codedWidth: canvas.width,
+        codedHeight: canvas.height,
+        timestamp,
+        duration: length,
+        colorSpace: BT709_COLOR_SPACE,
+      });
+      try {
+        await videoSource.add(sample);
+      } finally {
+        sample.close();
+      }
       onProgress?.("video", (index + 1) / totalFrames);
     }
 

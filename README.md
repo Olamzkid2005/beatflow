@@ -31,7 +31,9 @@ failure — see `docs/M0-FINDINGS.md` section 7.
 into a 1080p MP4 in the browser (Mediabunny + WebCodecs) with a live preview that plays the
 original MP3 alongside the canvas, stage progress, cancel, download, and a hand-off into
 the upload desk. The 3- and 10-minute renders, the five-render memory check, and VLC
-playback of a rendered file are measured (`docs/progress.md`). Deployed CORS, the unreadable
+playback of a rendered file are measured (`docs/progress.md`). The encoded pixels are
+converted from the sRGB transfer function to BT.709 and the H.264 `colr` box and SPS VUI
+are both tagged limited-range BT.709. Deployed CORS, the unreadable
 upload response, scheduled publication/processing, and the owner's actual quota remain
 unverified; uploading a rendered file to YouTube by hand is still to be recorded. See
 `docs/M0-FINDINGS.md` for the section 3 and section 12 research answers and the real-project
@@ -58,8 +60,8 @@ it asks first — and the tab warns before closing or reloading while a render o
 running. A render and upload are rejected before decoding when a photo exceeds 32 MP or
 audio exceeds 64 MiB / 15 minutes; large photos are downscaled during decode. The upload
 lifecycle lives in `lib/use-upload-job.ts`, and the form's hints/errors are linked with
-`aria-describedby`. A real 5-minute beat rendered at **1042 MiB peak renderer memory** on
-an 8 GB 2013 MacBook Air (1536 MiB budget), with +2 MiB retained across five render/discard
+`aria-describedby`. A real 5-minute beat rendered at **1067 MiB peak renderer memory** on
+an 8 GB 2013 MacBook Air (1536 MiB budget), with +4 MiB retained across five render/discard
 cycles. Automated WCAG A/AA passes with no violations; a screen-reader pass is still open.
 
 **M2 — template engine (in progress).** Templates are data, validated by zod v1 before

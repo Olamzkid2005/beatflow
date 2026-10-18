@@ -179,6 +179,142 @@ function readSampleEntry(buffer, box) {
   };
 }
 
+// --- Colour metadata inspection -------------------------------------------------
+
+/** Reads the `colr`/`nclx` box values and the SPS VUI colour description. */
+export function readColorTags(buffer) {
+  const colr = [];
+  let at = buffer.indexOf("colr");
+  while (at !== -1 && at + 15 <= buffer.length) {
+    const size = buffer.readUInt32BE(at - 4);
+    const isNclx = buffer.toString("latin1", at + 4, at + 8) === "nclx";
+    if (isNclx && size >= 19 && at - 4 + size <= buffer.length) {
+      colr.push({
+        primaries: buffer.readUInt16BE(at + 8),
+        transfer: buffer.readUInt16BE(at + 10),
+        matrix: buffer.readUInt16BE(at + 12),
+        // The nclx full-range flag is the high bit of the byte, not a 0/1 value.
+        fullRange: (buffer[at + 14] & 0x80) !== 0,
+      });
+    }
+    at = buffer.indexOf("colr", at + 4);
+  }
+  return { colr, sps: readSpsColor(buffer) };
+}
+
+class BitReader {
+  constructor(bytes) {
+    this.bytes = bytes;
+    this.bit = 0;
+  }
+
+  read(count) {
+    let value = 0;
+    for (let i = 0; i < count; i += 1) {
+      const byte = this.bytes[this.bit >> 3] ?? 0;
+      value = (value << 1) | ((byte >> (7 - (this.bit & 7))) & 1);
+      this.bit += 1;
+    }
+    return value;
+  }
+
+  /** Exp-Golomb unsigned. */
+  ue() {
+    let zeros = 0;
+    while (this.read(1) === 0) {
+      zeros += 1;
+      if (zeros > 31) throw new Error("Invalid Exp-Golomb code.");
+    }
+    return 2 ** zeros - 1 + (zeros ? this.read(zeros) : 0);
+  }
+
+  /** Exp-Golomb signed. */
+  se() {
+    const value = this.ue();
+    return value % 2 === 0 ? -(value / 2) : (value + 1) / 2;
+  }
+}
+
+const HIGH_PROFILES = new Set([100, 110, 122, 244, 44, 83, 86, 118, 128, 138, 139, 134, 135]);
+
+/** Removes H.264 emulation-prevention bytes. */
+function rbsp(bytes) {
+  const out = [];
+  for (let i = 0; i < bytes.length; i += 1) {
+    if (i >= 2 && bytes[i - 2] === 0 && bytes[i - 1] === 0 && bytes[i] === 3) continue;
+    out.push(bytes[i]);
+  }
+  return Uint8Array.from(out);
+}
+
+/** Parses enough of the first SPS to reach the VUI colour description. */
+export function readSpsColor(buffer) {
+  const avcc = buffer.indexOf("avcC");
+  if (avcc === -1 || avcc + 10 > buffer.length) return null;
+  const spsCount = buffer[avcc + 9] & 0x1f;
+  if (spsCount < 1) return null;
+  const spsLength = buffer.readUInt16BE(avcc + 10);
+  const nal = buffer.subarray(avcc + 12, avcc + 12 + spsLength);
+  if (nal.length < 4 || (nal[0] & 0x1f) !== 7) return null;
+
+  const reader = new BitReader(rbsp(nal.subarray(1)));
+  const profileIdc = reader.read(8);
+  reader.read(8);
+  reader.read(8);
+  reader.ue();
+  if (HIGH_PROFILES.has(profileIdc)) {
+    const chromaFormatIdc = reader.ue();
+    if (chromaFormatIdc === 3) reader.read(1);
+    reader.ue();
+    reader.ue();
+    reader.read(1);
+    if (reader.read(1)) {
+      const count = chromaFormatIdc === 3 ? 12 : 8;
+      for (let i = 0; i < count; i += 1) {
+        if (reader.read(1)) return null; // Scaling lists are not used by this encoder.
+      }
+    }
+  }
+  reader.ue();
+  const picOrderCntType = reader.ue();
+  if (picOrderCntType === 0) {
+    reader.ue();
+  } else if (picOrderCntType === 1) {
+    reader.read(1);
+    reader.se();
+    reader.se();
+    const cycles = reader.ue();
+    for (let i = 0; i < cycles; i += 1) reader.se();
+  }
+  reader.ue();
+  reader.read(1);
+  reader.ue();
+  reader.ue();
+  if (reader.read(1) === 0) reader.read(1);
+  reader.read(1);
+  if (reader.read(1)) for (let i = 0; i < 4; i += 1) reader.ue();
+  if (reader.read(1) === 0) return { present: false };
+  if (reader.read(1)) {
+    const aspectRatioIdc = reader.read(8);
+    if (aspectRatioIdc === 255) {
+      reader.read(16);
+      reader.read(16);
+    }
+  }
+  if (reader.read(1)) reader.read(1);
+  if (reader.read(1) === 0) return { present: false };
+  reader.read(3);
+  const fullRange = reader.read(1) === 1;
+  if (reader.read(1) === 0) return { present: true, fullRange, primaries: null, transfer: null, matrix: null };
+  return {
+    present: true,
+    fullRange,
+    primaries: reader.read(8),
+    transfer: reader.read(8),
+    matrix: reader.read(8),
+  };
+}
+
 /** Summarises one rendered MP4 well enough to validate the spec's output requirements. */
 export function inspectMp4(buffer) {
   const boxes = readBoxes(buffer);

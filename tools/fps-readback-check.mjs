@@ -13,6 +13,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
+import { readColorTags } from "./m0-probe/mp4.mjs";
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const chrome = process.env.CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 assert(existsSync(chrome), "Set CHROME_PATH to an installed Chrome binary.");
@@ -67,6 +69,18 @@ window.runFpsCheck = async () => {
       checks.videoPackets = stats.packetCount;
       checks.frameRate = stats.averagePacketRate;
       checks.videoDuration = await video.computeDuration();
+      const colorSpace = await video.getColorSpace();
+      checks.colorSpace = [
+        colorSpace.primaries,
+        colorSpace.transfer,
+        colorSpace.matrix,
+        colorSpace.fullRange,
+      ].join("/");
+      checks.colorSpaceOk =
+        colorSpace.primaries === "bt709" &&
+        colorSpace.transfer === "bt709" &&
+        colorSpace.matrix === "bt709" &&
+        colorSpace.fullRange === false;
     }
     if (sound) {
       checks.audioCodec = await sound.getCodec();
@@ -181,6 +195,7 @@ const server = createServer(async (req, res) => {
       return send("text/javascript", await transpile("lib/renderer/encode.ts", [
         ['"mediabunny"', '"/mediabunny.mjs"'],
         ['"./capabilities"', '"/caps-stub.js"'],
+        ['"./color"', '"/color.js"'],
         ['"./validate"', '"/validate.js"'],
       ]));
     }
@@ -188,6 +203,9 @@ const server = createServer(async (req, res) => {
       return send("text/javascript",
         "export const RENDER_VIDEO = { width: 1920, height: 1080, bitrate: 1800000, fullCodecString: 'avc1.640028', keyFrameInterval: 2 };\n" +
         "export const RENDER_AUDIO = { bitrate: 288000, sampleRate: 48000, channels: 2 };\n");
+    }
+    if (path === "/color.js") {
+      return send("text/javascript", await transpile("lib/renderer/color.ts", []));
     }
     if (path === "/validate.js") {
       return send("text/javascript", await transpile("lib/renderer/validate.ts", [
@@ -275,6 +293,19 @@ try {
   const bitrate = await evaluate("window.runAudioBitrateCheck()");
   assert.equal(bitrate.ok, true, JSON.stringify(bitrate));
 
+  // The encoded bitstream and container must both be tagged limited BT.709.
+  const tags = readColorTags(Buffer.from(result.bytes));
+  assert.deepEqual(tags.colr, [
+    { primaries: 1, transfer: 1, matrix: 1, fullRange: false },
+  ]);
+  assert.deepEqual(tags.sps, {
+    present: true,
+    fullRange: false,
+    primaries: 1,
+    transfer: 1,
+    matrix: 1,
+  });
+
   const outputDir = await mkdtemp(join(tmpdir(), "beatflow-f08-"));
   const mp4 = Buffer.from(result.bytes);
   await writeFile(join(outputDir, "30fps.mp4"), mp4);
@@ -283,6 +314,7 @@ try {
   const c = result.checks;
   console.log(`F08 PASS — ${browser.product}`);
   console.log(`  ${c.videoCodec}/${c.audioCodec}, ${c.width}×${c.height}, ${c.sampleRate} Hz ${c.channels} ch`);
+  console.log(`  colour ${c.colorSpace} (container and SPS: primaries 1, transfer 1, matrix 1, limited)`);
   console.log(`  ${c.videoPackets} video packets at ${c.frameRate} fps, ${c.videoDuration}s`);
   console.log(`  audio ${Math.round(c.audioBitrate / 1000)} kbps on a 2 s sine (288 kbps VBR target, content-dependent)`);
   console.log(`  audio ${Math.round(bitrate.measured / 1000)} kbps on 10 s dense stereo (inside the 256–320 kbps contract)`);

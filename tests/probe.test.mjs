@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { assertProbeResults, inspectMp4 } from "../tools/m0-probe/mp4.mjs";
+import { assertProbeResults, inspectMp4, readColorTags } from "../tools/m0-probe/mp4.mjs";
 const historical = JSON.parse(await readFile(new URL("../tools/m0-probe/report.json", import.meta.url), "utf8"));
 
 test("accepts the measured media proof without requiring exploratory Quality variants", () => {
@@ -32,6 +32,20 @@ test("fails structural, duration, format, decode and playback regressions", () =
     mutate(copy);
     assert.throws(() => assertProbeResults(copy.probe, copy.mp4));
   }
+});
+
+test("the colour parser sees the historical sRGB tagging", async () => {
+  const tags = readColorTags(await readFile(new URL("../public/beatflow-m0-test-5s.mp4", import.meta.url)));
+  assert.deepEqual(tags.colr, [
+    { primaries: 1, transfer: 13, matrix: 1, fullRange: true },
+  ]);
+  assert.deepEqual(tags.sps, {
+    present: true,
+    fullRange: true,
+    primaries: 1,
+    transfer: 13,
+    matrix: 1,
+  });
 });
 
 test("bundled artifact still matches the historical structural report", async () => {
