@@ -27,6 +27,8 @@ export function NavigationGuard() {
       const anchor = target.closest("a[href]");
       if (!(anchor instanceof HTMLAnchorElement)) return;
       if (anchor.target && anchor.target !== "_self") return;
+      // Saving a file is not navigation, even while a job is active.
+      if (anchor.hasAttribute("download")) return;
 
       let url: URL;
       try {
