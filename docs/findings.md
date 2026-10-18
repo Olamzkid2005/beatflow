@@ -19,24 +19,24 @@ This report consolidates the fresh codebase review and a second targeted check o
 
 ## Findings at a glance
 
-| ID | Priority | Finding | Evidence | Pass |
-| --- | --- | --- | --- | --- |
-| F01 | P1 | Recovery can attach an unrelated video's ID to the current attempt | Actual-source reproduction | Fresh review |
-| F02 | P1 | Generated artifact ownership is split between render and upload state | Production Chrome UI | Fresh review |
-| F03 | P1 | Internal navigation silently aborts active work | Production Chrome UI | Fresh review |
-| F04 | P1 | Default schedule uses browser time but saved-zone interpretation | Chrome UI + actual helper | Fresh review |
-| F05 | P1 | Legacy history is deleted even when migration fails | Actual-source failure injection | Fresh review |
-| F06 | P2 | IndexedDB writes resolve before transaction commit | Real Chrome IndexedDB abort | **Targeted follow-up** |
-| F07 | P2 | Long titles overlap branding and can clip outside the frame | Actual fonts + canvas bounds | **Targeted follow-up** |
-| F08 | P2 | Invalid FPS can produce an audio-only `video/mp4` result | Actual encoder + media readback | **Targeted follow-up** |
-| F09 | P2 | Render boundary neither validates nor snapshots its input | Actual `renderVideo()` calls | **Targeted follow-up** |
-| F10 | P2 | Failed partial uploads are labeled complete | Production Chrome UI | Fresh review |
-| F11 | P2 | Track defaults and upload metadata become stale | Production Chrome UI | Fresh review |
-| F12 | P2 | Storage denial can crash initialization or silently lose history | Actual-source reproduction + inspection | Fresh review |
-| F13 | P2 | Abort during audio encoding does not stop finalization | Controlled encoder-boundary reproduction | Fresh review |
-| F14 | P2 | Output uses sRGB transfer, not full BT.709 signalling | Container and H.264 SPS inspection | Fresh review |
-| F15 | P2 | Immediate public/unlisted visibility is not editable | Source/UI inspection; spec gap | Fresh review |
-| F16 | P2 | Parallel refresh responses can overwrite successful rotated credentials | Synthetic Auth.js requests; conditional risk | **Targeted follow-up** |
+| ID | Status | Priority | Finding | Evidence | Pass |
+| --- | --- | --- | --- | --- | --- |
+| F01 | **Done** | P1 | Recovery can attach an unrelated video's ID to the current attempt | Actual-source reproduction | Fresh review |
+| F02 | **Done** | P1 | Generated artifact ownership is split between render and upload state | Production Chrome UI | Fresh review |
+| F03 | **Done** | P1 | Internal navigation silently aborts active work | Production Chrome UI | Fresh review |
+| F04 | Open | P1 | Default schedule uses browser time but saved-zone interpretation | Chrome UI + actual helper | Fresh review |
+| F05 | **Done** | P1 | Legacy history is deleted even when migration fails | Actual-source failure injection | Fresh review |
+| F06 | **Done** | P2 | IndexedDB writes resolve before transaction commit | Real Chrome IndexedDB abort | **Targeted follow-up** |
+| F07 | **Done** | P2 | Long titles overlap branding and can clip outside the frame | Actual fonts + canvas bounds | **Targeted follow-up** |
+| F08 | **Done** | P2 | Invalid FPS can produce an audio-only `video/mp4` result | Actual encoder + media readback | **Targeted follow-up** |
+| F09 | **Done** | P2 | Render boundary neither validates nor snapshots its input | Actual `renderVideo()` calls | **Targeted follow-up** |
+| F10 | Open | P2 | Failed partial uploads are labeled complete | Production Chrome UI | Fresh review |
+| F11 | Open | P2 | Track defaults and upload metadata become stale | Production Chrome UI | Fresh review |
+| F12 | Open | P2 | Storage denial can crash initialization or silently lose history | Actual-source reproduction + inspection | Fresh review |
+| F13 | Open | P2 | Abort during audio encoding does not stop finalization | Controlled encoder-boundary reproduction | Fresh review |
+| F14 | Open | P2 | Output uses sRGB transfer, not full BT.709 signalling | Container and H.264 SPS inspection | Fresh review |
+| F15 | Open | P2 | Immediate public/unlisted visibility is not editable | Source/UI inspection; spec gap | Fresh review |
+| F16 | Open | P2 | Parallel refresh responses can overwrite successful rotated credentials | Synthetic Auth.js requests; conditional risk | **Targeted follow-up** |
 
 ## Detailed findings
 
