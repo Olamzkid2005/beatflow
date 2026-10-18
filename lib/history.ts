@@ -98,9 +98,10 @@ export async function clearHistory(): Promise<void> {
 
 export function historyStatus(
   entry: UploadHistoryEntry,
-): "scheduled" | "published" | "unlisted" | "unknown" {
+): "scheduled" | "publish-time-passed" | "unlisted" | "unknown" {
   // A confirmed recovery never read the video's real release state.
   if (entry.privacyStatus === "unknown") return "unknown";
   if (!entry.publishAt) return "unlisted";
-  return Date.parse(entry.publishAt) > Date.now() ? "scheduled" : "published";
+  // Passing the scheduled time is not proof that YouTube published it.
+  return Date.parse(entry.publishAt) > Date.now() ? "scheduled" : "publish-time-passed";
 }

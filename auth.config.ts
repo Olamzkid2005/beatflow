@@ -29,9 +29,12 @@ const authConfig: NextAuthConfig = {
     }),
   ],
   callbacks: {
-    /** Reject every Google account that is not the owner. */
+    /**
+     * Reject every Google account that is not the owner, and require Google's
+     * verified-email assertion: an email claim alone is not proof of control.
+     */
     signIn({ profile }) {
-      return isOwner(profile?.email);
+      return profile?.email_verified === true && isOwner(profile?.email);
     },
     /** Pages redirect to sign-in; API clients always get machine-readable errors. */
     authorized({ auth, request }) {

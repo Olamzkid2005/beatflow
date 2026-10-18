@@ -9,6 +9,7 @@ process.env.GOOGLE_CLIENT_SECRET = "test-client-secret";
 process.env.OWNER_EMAIL = "owner@example.com";
 const { auth, handlers, refreshInFlightCount } = await import("../auth.ts");
 const { requireOwner } = await import("../lib/require-owner.ts");
+const { default: authConfig } = await import("../auth.config.ts");
 
 async function request(path, token) {
   const cookie = await encode({
@@ -18,6 +19,30 @@ async function request(path, token) {
   });
   return new NextRequest(`http://localhost${path}`, { headers: { cookie: `authjs.session-token=${cookie}`, host: "localhost", "x-forwarded-proto": "http" } });
 }
+
+test("owner sign-in requires a Google-verified email", async () => {
+  const signIn = authConfig.callbacks.signIn;
+  assert.equal(
+    await signIn({ profile: { email: "owner@example.com", email_verified: true } }),
+    true,
+    "a verified owner must pass",
+  );
+  assert.equal(
+    await signIn({ profile: { email: "owner@example.com", email_verified: false } }),
+    false,
+    "an unverified owner email must not authorize",
+  );
+  assert.equal(
+    await signIn({ profile: { email: "owner@example.com" } }),
+    false,
+    "a missing verification claim must fail closed",
+  );
+  assert.equal(
+    await signIn({ profile: { email: "other@example.com", email_verified: true } }),
+    false,
+    "a verified non-owner must not authorize",
+  );
+});
 
 test("public session endpoint never serializes Google credentials", async () => {
   const response = await handlers.GET(await request("/api/auth/session"));

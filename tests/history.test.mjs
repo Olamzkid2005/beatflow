@@ -280,7 +280,7 @@ test("release state follows the schedule", () => {
   const future = new Date(Date.now() + 3_600_000).toISOString();
   const past = new Date(Date.now() - 3_600_000).toISOString();
   assert.equal(historyStatus(entry("a", "2026-10-17T10:00:00Z", { publishAt: future })), "scheduled");
-  assert.equal(historyStatus(entry("b", "2026-10-17T10:00:00Z", { publishAt: past })), "published");
+  assert.equal(historyStatus(entry("b", "2026-10-17T10:00:00Z", { publishAt: past })), "publish-time-passed");
   assert.equal(historyStatus(entry("c")), "unlisted");
   assert.equal(
     historyStatus(entry("d", "2026-10-17T10:00:00Z", { privacyStatus: "unknown" })),

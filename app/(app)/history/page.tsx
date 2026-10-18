@@ -19,12 +19,12 @@ import {
   type UploadHistoryEntry,
 } from "@/lib/history";
 
-type Filter = "all" | "scheduled" | "published";
+type Filter = "all" | "scheduled" | "publish-time-passed";
 
 const filters: Array<{ value: Filter; label: string }> = [
   { value: "all", label: "All" },
   { value: "scheduled", label: "Scheduled" },
-  { value: "published", label: "Published" },
+  { value: "publish-time-passed", label: "Publish time passed" },
 ];
 
 function formatDate(value: string | null): string {
@@ -38,16 +38,16 @@ function formatDate(value: string | null): string {
 }
 
 function statusTone(status: ReturnType<typeof historyStatus>) {
-  return status === "scheduled" ? "tertiary" : status === "published" ? "success" : "neutral";
+  return status === "scheduled" ? "tertiary" : "neutral";
 }
 
 function statusDot(status: ReturnType<typeof historyStatus>) {
-  return status === "scheduled" ? "tertiary" : status === "published" ? "success" : "muted";
+  return status === "scheduled" ? "tertiary" : "muted";
 }
 
 function statusLabel(status: ReturnType<typeof historyStatus>) {
   if (status === "scheduled") return "Scheduled";
-  if (status === "published") return "Published";
+  if (status === "publish-time-passed") return "Publish time passed";
   if (status === "unknown") return "Check in Studio";
   return "Unlisted";
 }
@@ -209,8 +209,8 @@ export default function HistoryPage() {
                     <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-outline-variant/70 bg-surface-container-lowest text-primary">
                       <Icon
                         name={
-                          status === "published"
-                            ? "youtube"
+                          status === "publish-time-passed"
+                            ? "clock"
                             : status === "scheduled"
                               ? "calendar"
                               : status === "unknown"
@@ -275,7 +275,7 @@ export default function HistoryPage() {
 
       <p className="flex items-center gap-2 border-t border-surface-container-highest pt-4 font-mono text-[10px] uppercase tracking-[0.12em] text-outline">
         <Icon name="info" className="h-3.5 w-3.5" />
-        Stored in IndexedDB in this browser · Up to 50 entries
+        Stored in IndexedDB in this browser · Up to 50 entries · Release state is inferred, not checked with YouTube
       </p>
     </div>
   );

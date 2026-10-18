@@ -521,3 +521,13 @@ Migration now reads the legacy rows, skips IDs already present, writes the rest 
 
 - Mediabunny 1.61.4's `VideoEncodingConfig` exposes codec, quality, key-frame interval, sizing and transforms, but no color primaries/transfer/matrix option. `CanvasSource` encodes 2D-canvas frames, and the resulting file still carries transfer 13 (sRGB) in both `colr` and SPS VUI.
 - A real fix needs a color-managed conversion (linearize sRGB, encode with the BT.709 transfer function) before the encoder, not a metadata relabel. That pipeline was not implemented in this pass, so this finding is not claimed as repaired and no output was relabelled.
+
+### Email-verification hardening — **PASS**, 18 October 2026
+
+- The Google sign-in callback now requires `profile.email_verified === true` in addition to the owner-email match. Missing or false verification fails closed instead of authorizing from an unverified email claim.
+- `tests/auth.test.mjs` covers verified owner, unverified owner, missing claim, and verified non-owner.
+
+### History truthfulness — **PASS for labeling; actual YouTube state still unfetched**, 18 October 2026
+
+- A passing scheduled time no longer reads as “Published”. `historyStatus` returns `publish-time-passed`, the History badge says “Publish time passed”, and the footer states that release state is inferred rather than checked with YouTube.
+- This does not query YouTube for real processing/privacy/publication state; that remains a documented limitation, not a verified release status.
