@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --import ./tests/register.mjs --test tests/*.test.mjs",
-    "m0:probe": "node tools/m0-probe/run.mjs"
+    "m0:probe": "node tools/m0-probe/run.mjs",
+    "idb:check": "node tools/idb-durability-check.mjs"
   },
   "dependencies": {
     "mediabunny": "^1.61.4",

@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createHistory, createMemoryBackend, MAX_ENTRIES, normalizeEntries } from "../lib/history-store.ts";
+import {
+  createHistory,
+  createIndexedDbBackend,
+  createMemoryBackend,
+  MAX_ENTRIES,
+  normalizeEntries,
+} from "../lib/history-store.ts";
 import { historyStatus } from "../lib/history.ts";
 import { parseChannelUploads, pickMatchingUpload } from "../lib/youtube/reconcile.ts";
 
@@ -90,6 +96,113 @@ test("migration leaves an existing store alone and still clears the legacy key",
   });
   assert.deepEqual((await history.list()).map((row) => row.videoId), ["already-here"]);
   assert.equal(cleared, 1);
+});
+
+/**
+ * Minimal IndexedDB stand-in. It reproduces the ordering the adapter must
+ * respect: request success fires before the transaction can still abort.
+ */
+function fakeIndexedDb({ abortAfterRequest = false } = {}) {
+  const state = { abortAfterRequest };
+  const databases = new Map();
+
+  function storesFor(name) {
+    if (!databases.has(name)) databases.set(name, new Map());
+    return databases.get(name);
+  }
+
+  const factory = {
+    open(name) {
+      const request = { result: null, error: null, onsuccess: null, onerror: null, onupgradeneeded: null };
+      queueMicrotask(() => {
+        const stores = storesFor(name);
+        const db = {
+          objectStoreNames: { contains: (storeName) => stores.has(storeName) },
+          createObjectStore: (storeName) => stores.set(storeName, new Map()),
+          transaction: (storeName) => {
+            const rows = stores.get(storeName);
+            const snapshot = new Map(rows);
+            let aborted = false;
+            const tx = { error: null, oncomplete: null, onabort: null, onerror: null };
+            const run = (work) => {
+              const operation = { result: undefined, error: null, onsuccess: null, onerror: null };
+              queueMicrotask(() => {
+                if (aborted) return;
+                try {
+                  operation.result = work();
+                } catch (error) {
+                  operation.error = error;
+                  operation.onerror?.(new Event("error"));
+                  return;
+                }
+                operation.onsuccess?.(new Event("success"));
+                // A transaction can still roll back after the request reported success.
+                queueMicrotask(() => {
+                  if (aborted) return;
+                  if (state.abortAfterRequest) {
+                    aborted = true;
+                    // A real abort rolls the whole transaction back.
+                    rows.clear();
+                    for (const [key, value] of snapshot) rows.set(key, value);
+                    tx.error = new Error("transaction aborted after request success");
+                    tx.onabort?.(new Event("abort"));
+                  } else {
+                    tx.oncomplete?.(new Event("complete"));
+                  }
+                });
+              });
+              return operation;
+            };
+            tx.objectStore = () => ({
+              getAll: () => run(() => [...rows.values()]),
+              put: (value) => run(() => { rows.set(value.videoId, structuredClone(value)); }),
+              delete: (videoId) => run(() => { rows.delete(videoId); }),
+              clear: () => run(() => { rows.clear(); }),
+            });
+            return tx;
+          },
+        };
+        request.result = db;
+        request.onupgradeneeded?.(new Event("upgradeneeded"));
+        request.onsuccess?.(new Event("success"));
+      });
+      return request;
+    },
+  };
+
+  return { factory, state, databases };
+}
+
+test("an IndexedDB write resolves only after the transaction commits", async () => {
+  const { factory } = fakeIndexedDb();
+  const backend = createIndexedDbBackend(factory, "durable-history");
+
+  await backend.put(entry("committed"));
+  assert.deepEqual((await backend.list()).map((row) => row.videoId), ["committed"]);
+
+  await backend.clear();
+  assert.deepEqual(await backend.list(), []);
+});
+
+test("a write whose transaction aborts after request success rejects", async () => {
+  const { factory, databases } = fakeIndexedDb({ abortAfterRequest: true });
+  const backend = createIndexedDbBackend(factory, "aborting-history");
+
+  await assert.rejects(backend.put(entry("rolled-back")), /aborted after request success/i);
+  assert.equal(databases.get("aborting-history").get("uploads").size, 0, "nothing committed");
+});
+
+test("clear and remove reject an aborted transaction without claiming success", async () => {
+  const { factory, state, databases } = fakeIndexedDb();
+  const backend = createIndexedDbBackend(factory, "aborting-clear");
+  await backend.put(entry("keep"));
+
+  state.abortAfterRequest = true;
+  await assert.rejects(backend.clear(), /aborted after request success/i);
+  await assert.rejects(backend.remove(["keep"]), /aborted after request success/i);
+
+  const rows = databases.get("aborting-clear").get("uploads");
+  assert.deepEqual([...rows.keys()], ["keep"], "the stored row survives the aborted writes");
 });
 
 test("release state follows the schedule", () => {

@@ -419,3 +419,17 @@ Use synthetic, nonsecret fixtures; do not check real media/PII/tokens into evide
 Stop on failing required tests, lost legacy data, wrong video ID, false saved/uploaded state, invalid/audio-only MP4, leaked credentials, unexplained timestamp drift, stale job mutation or limits exceeded. Fix the proven cause and rerun affected checks; if blocked, report the failing gate and missing requirement. Do not silently change the product requirement, invent a performance result or declare production Google acceptance from mocked tests.
 
 For future template/Orbital implementation, also follow **`docs/template-system-design.md`, sections 13–14**. The static asset pack and isolated simulated prototype are visual-review aids, not evidence that any production audit finding is fixed.
+
+## Repair log
+
+Append-only. A repair is listed only with the evidence from this runbook; findings without an entry remain open.
+
+### F06 — IndexedDB writes wait for transaction commit — **PASS**, 18 October 2026
+
+`lib/history-store.ts` now resolves `put`, `clear`, `remove` and `list` from `tx.oncomplete`, captures the request result separately, and rejects on request error or `tx.onabort`. Request errors call `preventDefault()` so the request's own failure is reported instead of a generic abort.
+
+- `tests/history.test.mjs`: three new tests cover a committed write/clear, a write aborted after request success (rejects, zero rows), and aborted clear/remove retaining the stored row. Full history file: **10/10 passed**.
+- `npm run idb:check` (real Chrome 155.0.8059.80, real IndexedDB): aborted `put`, `clear` and `remove` all reject with nothing changed; a committed write is visible after reopening the database; aborting did not throw. This reproduces the exact request-success-then-abort ordering from the finding.
+- Node tests use a minimal fake that also rolls back on abort; its ordering is a model, not proof of browser semantics. The Chrome check is the authoritative evidence.
+
+**Still open:** F05 migration still clears the legacy key after failure. F06 makes the transaction signal honest, but migration retry/merge behavior is a separate fix and must be done next (see the dependency note above). Larger memory/performance and deployed-Google gates are unaffected.

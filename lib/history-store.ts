@@ -161,36 +161,88 @@ export function createIndexedDbBackend(
     return dbPromise;
   }
 
+  /**
+   * Runs one transaction and resolves only once it commits. A request that
+   * succeeds can still be rolled back, so `onsuccess` alone is not durable
+   * evidence: an abort that follows would otherwise look like a saved write.
+   */
   function transaction<T>(
     mode: IDBTransactionMode,
-    work: (store: IDBObjectStore) => IDBRequest<T>,
-  ): Promise<T> {
+    work: (store: IDBObjectStore) => IDBRequest<T> | void,
+  ): Promise<T | undefined> {
     return open().then(
       (db) =>
-        new Promise<T>((resolve, reject) => {
-          const tx = db.transaction(storeName, mode);
-          const request = work(tx.objectStore(storeName));
-          request.onsuccess = () => resolve(request.result);
-          request.onerror = () => reject(request.error ?? new Error("History request failed."));
-          tx.onabort = () => reject(tx.error ?? new Error("History transaction aborted."));
+        new Promise<T | undefined>((resolve, reject) => {
+          let tx: IDBTransaction;
+          try {
+            tx = db.transaction(storeName, mode);
+          } catch (error) {
+            reject(error);
+            return;
+          }
+
+          let result: T | undefined;
+          let failure: unknown = null;
+          let requestFailure: unknown = null;
+          let settled = false;
+          const settle = (done: () => void) => {
+            if (settled) return;
+            settled = true;
+            done();
+          };
+
+          tx.oncomplete = () => settle(() => (failure ? reject(failure) : resolve(result)));
+          tx.onabort = () =>
+            settle(() =>
+              reject(requestFailure ?? tx.error ?? new Error("History transaction aborted.")),
+            );
+          // Without this, a failed request aborts the transaction before the
+          // caller can see the request's own error.
+          tx.onerror = (event) => {
+            failure ??= tx.error ?? new Error("History transaction failed.");
+            event.preventDefault();
+          };
+
+          try {
+            const request = work(tx.objectStore(storeName));
+            if (request) {
+              request.onsuccess = () => {
+                result = request.result;
+              };
+              request.onerror = (event) => {
+                requestFailure ??= request.error ?? new Error("History request failed.");
+                failure ??= requestFailure;
+                event.preventDefault();
+              };
+            }
+          } catch (error) {
+            failure ??= error;
+            try {
+              tx.abort();
+            } catch {
+              // The transaction may already be finished; the rejection below
+              // still reports the original failure.
+            }
+          }
         }),
     );
   }
 
   return {
-    list: () => transaction("readonly", (store) => store.getAll() as IDBRequest<unknown[]>),
+    async list() {
+      return (
+        (await transaction<unknown[]>("readonly", (store) =>
+          store.getAll() as IDBRequest<unknown[]>,
+        )) ?? []
+      );
+    },
     async put(entry) {
       await transaction("readwrite", (store) => store.put(entry));
     },
     async remove(videoIds) {
       if (videoIds.length === 0) return;
-      const db = await open();
-      await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(storeName, "readwrite");
-        const store = tx.objectStore(storeName);
+      await transaction("readwrite", (store) => {
         for (const videoId of videoIds) store.delete(videoId);
-        tx.oncomplete = () => resolve();
-        tx.onabort = tx.onerror = () => reject(tx.error ?? new Error("History cleanup failed."));
       });
     },
     async clear() {
