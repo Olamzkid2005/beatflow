@@ -25,6 +25,7 @@ const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 assert(existsSync(chrome), "Set CHROME_PATH to an installed Chrome binary.");
 assert(existsSync(join(root, ".next/BUILD_ID")), "Run npm run build first.");
 
+const TEST_TITLE = "BeatFlow M0 test — 5 seconds";
 const results = [];
 const record = (name, detail = "") => {
   results.push(name);
@@ -361,6 +362,72 @@ try {
   assert.equal(await pathname(), "/history", "one back press after work did not reach the previous page");
   assert.equal(dialogs.length, dialogsBeforeIdleBack, "work that already ended still prompted");
   record("ending work removes the trap; one back press leaves the studio");
+
+  // F01: an unreadable session response offers candidates, never an auto-pick.
+  await clickText("a", "Studio");
+  await waitFor("location.pathname === '/generate'");
+  await pickFile("#video-file", "/beatflow-m0-test-5s.mp4", "recovery-source.mp4", "video/mp4");
+  await waitFor("document.body.innerText.includes('recovery-source.mp4')");
+
+  const candidate = {
+    videoId: "confirmed-recovered",
+    title: TEST_TITLE,
+    publishedAt: new Date(Date.now() - 5_000).toISOString(),
+  };
+  const fulfill = (requestId, body) =>
+    send("Fetch.fulfillRequest", {
+      requestId,
+      responseCode: 200,
+      responseHeaders: [
+        { name: "Content-Type", value: "application/json" },
+        { name: "Access-Control-Allow-Origin", value: origin },
+      ],
+      body: Buffer.from(JSON.stringify(body)).toString("base64"),
+    });
+  await send("Fetch.enable", { patterns: [fetchRule] });
+  const recoveryPump = setInterval(() => {
+    while (events.length) {
+      const event = events.shift();
+      if (event.method !== "Fetch.requestPaused") continue;
+      const { requestId, request } = event.params;
+      if (request.url.includes("/api/youtube/init-upload")) {
+        void fulfill(requestId, { sessionUri: "https://upload.example/session" });
+      } else if (request.url.startsWith("https://upload.example/")) {
+        void send("Fetch.failRequest", { requestId, errorReason: "Failed" });
+      } else if (request.url.includes("/api/youtube/latest-upload")) {
+        void fulfill(requestId, { candidates: [candidate] });
+      } else {
+        void send("Fetch.continueRequest", { requestId });
+      }
+    }
+  }, 20);
+
+  await clickText("button", "Start upload");
+  for (let i = 0; i < 700 && !(await bodyText()).includes("Find it on my channel"); i++) await sleep(50);
+  assert.match(await bodyText(), /Upload outcome unknown/);
+  assert.doesNotMatch(await bodyText(), /Confirmed on your channel/);
+  record("unreadable upload response leaves the outcome unknown");
+
+  await clickText("button", "Find it on my channel");
+  await waitFor("document.body.innerText.includes('Choose the upload this attempt created')");
+  assert.match(await bodyText(), new RegExp(candidate.videoId));
+  assert.doesNotMatch(await bodyText(), /Confirmed on your channel/);
+  record("recovery shows candidates without adopting one");
+
+  await clickText("button", "That's this upload");
+  await waitFor("document.body.innerText.includes('Confirmed on your channel')");
+  assert.match(await bodyText(), /privacy, processing state and schedule could not be verified/i);
+  record("only explicit confirmation records the recovered ID, with unverified state");
+
+  await clickText("a", "History");
+  await waitFor("document.body.innerText.includes('Release history')");
+  await waitFor("document.body.innerText.includes('confirmed-recovered')");
+  assert.match(await bodyText(), /Check in Studio/);
+  assert.match(await bodyText(), /Privacy unverified/);
+  record("history marks recovered release state as unverified");
+
+  clearInterval(recoveryPump);
+  await send("Fetch.disable");
 
   console.log(`F02/F03 PASS — ${version.product}`);
   console.log(`  ${results.length} browser assertions in production Chrome`);

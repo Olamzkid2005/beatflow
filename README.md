@@ -43,9 +43,11 @@ IndexedDB (`lib/history.ts` over `lib/history-store.ts`, migrating the earlier
 localStorage rows) with up to 50 entries per browser. Because the browser still cannot
 read a resumable session's response, an unknown upload outcome is recoverable: the desk
 asks `POST /api/youtube/latest-upload`, which looks at the channel's uploads playlist
-(`channels.list` + `playlistItems.list`, 2 quota units, never `search.list`) and matches
-the newest upload with the same title inside a short window. It never guesses an ID, and a
-miss leaves the outcome unknown. Still open: a real run against the owner's channel.
+(`channels.list` + `playlistItems.list`, 2 quota units, never `search.list`) and returns
+every same-title upload inside the attempt window. Nothing is recorded until the owner
+confirms the right candidate; a miss leaves the outcome unknown. A confirmed ID keeps its
+privacy and schedule marked unverified instead of copying the request's intent. Still
+open: a real run against the owner's channel.
 
 **M4 — polish (in progress).** Producer defaults live in `/settings` and seed the next
 upload. A finished render is only released when the user agrees — replacing or discarding
@@ -138,7 +140,7 @@ app/
   api/auth/[...nextauth]/route.ts
   api/youtube/channel/route.ts       channel name and avatar
   api/youtube/init-upload/route.ts   starts the resumable session
-  api/youtube/latest-upload/route.ts recovers the video id from the uploads playlist
+  api/youtube/latest-upload/route.ts suggests recovery candidates from the uploads playlist
 components/
   app-shell.tsx           Header, sidebar, mobile navigation and account controls
   nav-links.tsx           Shared route navigation

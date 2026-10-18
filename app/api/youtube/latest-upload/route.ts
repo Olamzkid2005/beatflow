@@ -4,22 +4,30 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { requireOwner } from "@/lib/require-owner";
 import { authedFetch, readGoogleError, YOUTUBE_API_BASE } from "@/lib/youtube/api";
-import { parseChannelUploads, pickMatchingUpload } from "@/lib/youtube/reconcile";
+import { findMatchingUploads, parseChannelUploads } from "@/lib/youtube/reconcile";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
 /**
- * Recovers the video ID when the browser could not read the resumable upload's
- * response. Uses the channel's uploads playlist: `channels.list` (1 unit) then
- * `playlistItems.list` (1 unit), which is far cheaper than `search.list`.
+ * Suggests possible uploads when the browser could not read the resumable
+ * session's response. Uses the channel's uploads playlist: `channels.list`
+ * (1 unit) then `playlistItems.list` (1 unit), far cheaper than `search.list`.
+ * It never returns a single "matched" video: the owner must confirm an ID.
  */
-const bodySchema = z.object({
-  title: z.string().trim().min(1).max(100),
-  notBefore: z
-    .string()
-    .refine((value) => Number.isFinite(Date.parse(value)), "notBefore must be an ISO 8601 timestamp."),
-});
+const isoDate = (field: string) =>
+  z.string().refine((value) => Number.isFinite(Date.parse(value)), `${field} must be an ISO 8601 timestamp.`);
+
+const bodySchema = z
+  .object({
+    title: z.string().trim().min(1).max(100),
+    notBefore: isoDate("notBefore"),
+    notAfter: isoDate("notAfter"),
+  })
+  .refine((value) => Date.parse(value.notAfter) >= Date.parse(value.notBefore), {
+    message: "notAfter must be at or after notBefore.",
+    path: ["notAfter"],
+  });
 
 type ChannelsPayload = {
   items?: Array<{ contentDetails?: { relatedPlaylists?: { uploads?: string } } }>;
@@ -61,7 +69,7 @@ export const POST = auth(async (request) => {
     }
 
     const itemsResponse = await authedFetch(
-      `${YOUTUBE_API_BASE}/playlistItems?part=snippet&maxResults=10&playlistId=${encodeURIComponent(uploadsPlaylist)}`,
+      `${YOUTUBE_API_BASE}/playlistItems?part=snippet&maxResults=25&playlistId=${encodeURIComponent(uploadsPlaylist)}`,
       owner.accessToken,
     );
     if (!itemsResponse.ok) {
@@ -71,8 +79,11 @@ export const POST = auth(async (request) => {
       );
     }
 
-    const match = pickMatchingUpload(parseChannelUploads(await itemsResponse.json()), parsed.data);
-    if (!match) {
+    const candidates = findMatchingUploads(
+      parseChannelUploads(await itemsResponse.json()),
+      parsed.data,
+    );
+    if (candidates.length === 0) {
       return NextResponse.json(
         {
           error:
@@ -82,7 +93,9 @@ export const POST = auth(async (request) => {
       );
     }
 
-    return NextResponse.json({ video: match });
+    // Candidates are suggestions, not proof of authorship. The UI requires an
+    // explicit choice before writing a video ID or release metadata.
+    return NextResponse.json({ candidates });
   } catch {
     return NextResponse.json(
       { error: "Could not reach YouTube or read its response. Try again." },

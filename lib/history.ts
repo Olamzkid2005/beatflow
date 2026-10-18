@@ -75,7 +75,11 @@ export async function clearHistory(): Promise<void> {
   announce();
 }
 
-export function historyStatus(entry: UploadHistoryEntry): "scheduled" | "published" | "unlisted" {
+export function historyStatus(
+  entry: UploadHistoryEntry,
+): "scheduled" | "published" | "unlisted" | "unknown" {
+  // A confirmed recovery never read the video's real release state.
+  if (entry.privacyStatus === "unknown") return "unknown";
   if (!entry.publishAt) return "unlisted";
   return Date.parse(entry.publishAt) > Date.now() ? "scheduled" : "published";
 }

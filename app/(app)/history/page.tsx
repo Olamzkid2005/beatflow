@@ -45,6 +45,13 @@ function statusDot(status: ReturnType<typeof historyStatus>) {
   return status === "scheduled" ? "tertiary" : status === "published" ? "success" : "muted";
 }
 
+function statusLabel(status: ReturnType<typeof historyStatus>) {
+  if (status === "scheduled") return "Scheduled";
+  if (status === "published") return "Published";
+  if (status === "unknown") return "Check in Studio";
+  return "Unlisted";
+}
+
 export default function HistoryPage() {
   const [entries, setEntries] = useState<UploadHistoryEntry[] | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
@@ -188,7 +195,15 @@ export default function HistoryPage() {
                   <div className="flex min-w-0 items-start gap-3">
                     <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-outline-variant/70 bg-surface-container-lowest text-primary">
                       <Icon
-                        name={status === "published" ? "youtube" : status === "scheduled" ? "calendar" : "movie"}
+                        name={
+                          status === "published"
+                            ? "youtube"
+                            : status === "scheduled"
+                              ? "calendar"
+                              : status === "unknown"
+                                ? "alert"
+                                : "movie"
+                        }
                         className="h-4 w-4"
                       />
                     </span>
@@ -198,7 +213,7 @@ export default function HistoryPage() {
                         <h2 className="truncate text-sm font-medium">{entry.title}</h2>
                         <Badge tone={statusTone(status)}>
                           <StatusDot tone={statusDot(status)} />
-                          {status === "scheduled" ? "Scheduled" : status === "published" ? "Published" : "Unlisted"}
+                          {statusLabel(status)}
                         </Badge>
                       </div>
 
@@ -209,11 +224,15 @@ export default function HistoryPage() {
                       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-on-surface-variant">
                         <span className="inline-flex items-center gap-1.5">
                           <Icon name="calendar" className="h-3.5 w-3.5 text-outline" />
-                          {entry.publishAt ? formatDate(entry.publishAt) : "No schedule"}
+                          {entry.publishAt
+                            ? formatDate(entry.publishAt)
+                            : status === "unknown"
+                              ? "Schedule unverified"
+                              : "No schedule"}
                         </span>
                         <span className="inline-flex items-center gap-1.5">
                           <Icon name="shield" className="h-3.5 w-3.5 text-outline" />
-                          {entry.privacyStatus}
+                          {entry.privacyStatus === "unknown" ? "Privacy unverified" : entry.privacyStatus}
                         </span>
                         <span className="inline-flex items-center gap-1.5">
                           <Icon name="clock" className="h-3.5 w-3.5 text-outline" />

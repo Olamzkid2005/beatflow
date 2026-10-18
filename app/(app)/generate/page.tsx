@@ -52,6 +52,14 @@ type UploadAttempt = {
   publishAt: string | null;
   privacyStatus: string;
   startedAt: string;
+  /** Set when the response became unreadable; bounds the candidate search. */
+  failedAt?: string;
+};
+
+type RecoveryCandidate = {
+  videoId: string;
+  title: string;
+  publishedAt: string;
 };
 
 const TEST_TITLE = "BeatFlow M0 test — 5 seconds";
@@ -60,6 +68,13 @@ const subscribe = () => () => {};
 
 function defaultSchedule(): string {
   return toDateTimeLocalValue(new Date(Date.now() + 10 * 60 * 1000));
+}
+
+/** Kept out of the component so the React compiler sees no clock read in render analysis. */
+function assertFutureSchedule(publishAt: string | null): void {
+  if (publishAt && Date.parse(publishAt) <= Date.now()) {
+    throw new Error("Choose a schedule in the future.");
+  }
 }
 
 function formatBytes(bytes: number): string {
@@ -143,6 +158,7 @@ function UploadStudio() {
   const [outcomeUnknown, setOutcomeUnknown] = useState(false);
   const [result, setResult] = useState<UploadResult | null>(null);
   const [recovering, setRecovering] = useState(false);
+  const [candidates, setCandidates] = useState<RecoveryCandidate[] | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const attemptRef = useRef<UploadAttempt | null>(null);
@@ -167,6 +183,7 @@ function UploadStudio() {
     setError(null);
     setOutcomeUnknown(false);
     setResult(null);
+    setCandidates(null);
     setProgress(null);
 
     if (!file) {
@@ -185,9 +202,7 @@ function UploadStudio() {
     let publishAt: string | null = null;
     try {
       publishAt = schedule ? toUtcIso8601(schedule, timeZone) : null;
-      if (publishAt && Date.parse(publishAt) <= Date.now()) {
-        throw new Error("Choose a schedule in the future.");
-      }
+      assertFutureSchedule(publishAt);
     } catch (scheduleError) {
       setError(scheduleError instanceof Error ? scheduleError.message : "Invalid schedule.");
       return;
@@ -272,7 +287,14 @@ function UploadStudio() {
           "Upload cancelled. If YouTube already accepted it, cancellation does not remove the video; check YouTube Studio before uploading again.",
         );
       } else {
-        setOutcomeUnknown(uploadError instanceof UploadOutcomeUnknownError);
+        const unknown = uploadError instanceof UploadOutcomeUnknownError;
+        setOutcomeUnknown(unknown);
+        if (unknown && attemptRef.current) {
+          attemptRef.current = {
+            ...attemptRef.current,
+            failedAt: new Date().toISOString(),
+          };
+        }
         setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
       }
     } finally {
@@ -283,8 +305,8 @@ function UploadStudio() {
 
   /**
    * The desk cannot read the resumable session's response, so an unknown upload
-   * outcome stays recoverable: ask the server for the newest matching upload on
-   * this channel and record that as the result. Never guesses an ID.
+   * outcome stays recoverable. The server returns every same-title upload inside
+   * the attempt window; none is adopted until the owner confirms one below.
    */
   async function recoverUpload() {
     const attempt = attemptRef.current;
@@ -292,35 +314,37 @@ function UploadStudio() {
 
     setRecovering(true);
     setError(null);
+    setCandidates(null);
     try {
       const response = await fetch("/api/youtube/latest-upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: AbortSignal.timeout(30_000),
-        body: JSON.stringify({ title: attempt.title, notBefore: attempt.startedAt }),
+        body: JSON.stringify({
+          title: attempt.title,
+          notBefore: attempt.startedAt,
+          notAfter: attempt.failedAt ?? new Date().toISOString(),
+        }),
       });
       const body = await response.json().catch(() => null);
-      const videoId = body?.video?.videoId;
-      if (!response.ok || typeof videoId !== "string" || !videoId) {
+      const rows: unknown[] = Array.isArray(body?.candidates) ? body.candidates : [];
+      const found = rows.filter((row): row is RecoveryCandidate => {
+        if (!row || typeof row !== "object") return false;
+        const candidate = row as Record<string, unknown>;
+        return (
+          typeof candidate.videoId === "string" &&
+          candidate.videoId.length > 0 &&
+          typeof candidate.publishedAt === "string" &&
+          Number.isFinite(Date.parse(candidate.publishedAt))
+        );
+      });
+      if (!response.ok || found.length === 0) {
         setError(body?.error ?? `No matching upload found (${response.status}).`);
         return;
       }
 
-      setOutcomeUnknown(false);
-      setResult({
-        videoId,
-        publishAt: attempt.publishAt,
-        privacyStatus: attempt.privacyStatus,
-        recovered: true,
-      });
-      void addHistoryEntry({
-        videoId,
-        title: attempt.title,
-        channelTitle: channel?.title ?? null,
-        publishAt: attempt.publishAt,
-        privacyStatus: attempt.privacyStatus,
-        createdAt: new Date().toISOString(),
-      });
+      // Keep the outcome marked unknown until the owner picks one.
+      setCandidates(found);
     } catch (recoverError) {
       setError(
         recoverError instanceof Error ? recoverError.message : "Could not look up the upload.",
@@ -328,6 +352,34 @@ function UploadStudio() {
     } finally {
       setRecovering(false);
     }
+  }
+
+  /**
+   * A confirmed ID names the video, but its actual privacy, processing state and
+   * schedule were never readable. Record them as unknown rather than copying the
+   * request's intent into the history.
+   */
+  function confirmRecovered(candidate: RecoveryCandidate) {
+    const attempt = attemptRef.current;
+    if (!attempt) return;
+
+    setCandidates(null);
+    setOutcomeUnknown(false);
+    setError(null);
+    setResult({
+      videoId: candidate.videoId,
+      publishAt: null,
+      privacyStatus: "unknown",
+      recovered: true,
+    });
+    void addHistoryEntry({
+      videoId: candidate.videoId,
+      title: attempt.title,
+      channelTitle: channel?.title ?? null,
+      publishAt: null,
+      privacyStatus: "unknown",
+      createdAt: new Date().toISOString(),
+    });
   }
 
   const descriptionBytes = new TextEncoder().encode(description).length;
@@ -602,6 +654,51 @@ function UploadStudio() {
             </div>
           ) : null}
 
+          {outcomeUnknown && candidates ? (
+            <Card role="group" aria-label="Recovery candidates" className="p-4 sm:p-5">
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-outline">
+                Recovery
+              </p>
+              <h2 className="mt-1 text-base font-semibold">
+                Choose the upload this attempt created
+              </h2>
+              <p className="mt-1 text-xs leading-5 text-on-surface-variant">
+                These uploads share this title and fall inside the attempt window. Nothing is
+                recorded until you confirm one.
+              </p>
+              <ul className="mt-4 flex flex-col gap-2">
+                {candidates.map((candidate) => (
+                  <li
+                    key={candidate.videoId}
+                    className="flex flex-col gap-3 rounded-xl border border-outline-variant/70 bg-surface-container-lowest/60 p-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{candidate.title}</p>
+                      <p className="mt-1 font-mono text-[10px] text-outline">
+                        {candidate.videoId} · {formatSchedule(candidate.publishedAt)}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <a
+                        href={`https://studio.youtube.com/video/${candidate.videoId}/edit`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={buttonClass({ variant: "ghost", size: "sm" })}
+                      >
+                        Check in Studio
+                        <Icon name="external" className="h-3.5 w-3.5" />
+                      </a>
+                      <Button type="button" size="sm" onClick={() => confirmRecovered(candidate)}>
+                        <Icon name="check" className="h-3.5 w-3.5" />
+                        That&apos;s this upload
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
+
           {result ? (
             <div
               role="status"
@@ -614,21 +711,25 @@ function UploadStudio() {
                     <Icon name="check" className="h-4 w-4" />
                   </span>
                   <div>
-                    <p className="text-sm font-medium text-emerald-200">Uploaded to YouTube</p>
+                    <p className="text-sm font-medium text-emerald-200">
+                      {result.recovered ? "Confirmed on your channel" : "Uploaded to YouTube"}
+                    </p>
                     <p className="mt-1 font-mono text-[10px] text-on-surface-variant">
                       {result.videoId}
                     </p>
-                    <p className="mt-2 text-xs leading-5 text-on-surface-variant">
-                      {result.publishAt
-                        ? `Scheduled for ${formatSchedule(result.publishAt)} · ${result.privacyStatus} until then`
-                        : `Uploaded as ${result.privacyStatus}`}
-                    </p>
                     {result.recovered ? (
-                      <p className="mt-1 text-xs leading-5 text-on-surface-variant">
-                        Matched from the newest upload on this channel because the upload
-                        response was unreadable.
+                      <p className="mt-2 text-xs leading-5 text-on-surface-variant">
+                        You confirmed this video ID after an unreadable upload response. Its
+                        privacy, processing state and schedule could not be verified here — check
+                        YouTube Studio before relying on them.
                       </p>
-                    ) : null}
+                    ) : (
+                      <p className="mt-2 text-xs leading-5 text-on-surface-variant">
+                        {result.publishAt
+                          ? `Scheduled for ${formatSchedule(result.publishAt)} · ${result.privacyStatus} until then`
+                          : `Uploaded as ${result.privacyStatus}`}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">

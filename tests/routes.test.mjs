@@ -45,7 +45,9 @@ test("channel network failure is a structured 502", async (t) => {
   assert.match((await response.json()).error, /YouTube/);
 });
 
-test("outcome lookup follows the uploads playlist and never uses search.list", async (t) => {
+test("outcome lookup returns bounded candidates, never an auto-picked video", async (t) => {
+  const base = Date.parse("2026-10-18T12:00:00Z");
+  const at = (offset) => new Date(base + offset).toISOString();
   const urls = [];
   t.mock.method(globalThis, "fetch", async (url) => {
     urls.push(String(url));
@@ -54,12 +56,26 @@ test("outcome lookup follows the uploads playlist and never uses search.list", a
     }
     return Response.json({
       items: [
-        { snippet: { title: "Older release", publishedAt: "2026-10-01T10:00:00Z", resourceId: { videoId: "old-video" } } },
+        { snippet: { title: "Older release", publishedAt: at(-86_400_000), resourceId: { videoId: "old-video" } } },
         {
           snippet: {
             title: "Midnight  Loop",
-            publishedAt: new Date(Date.now() - 30_000).toISOString(),
-            resourceId: { videoId: "recovered-video" },
+            publishedAt: at(-90_000),
+            resourceId: { videoId: "possibly-earlier-video" },
+          },
+        },
+        {
+          snippet: {
+            title: "midnight loop",
+            publishedAt: at(-30_000),
+            resourceId: { videoId: "candidate-video" },
+          },
+        },
+        {
+          snippet: {
+            title: "Midnight Loop",
+            publishedAt: at(600_000),
+            resourceId: { videoId: "after-window-video" },
           },
         },
       ],
@@ -69,12 +85,19 @@ test("outcome lookup follows the uploads playlist and never uses search.list", a
   const response = await latestUpload(
     await request("/api/youtube/latest-upload", {
       title: "midnight loop",
-      notBefore: new Date(Date.now() - 60_000).toISOString(),
+      notBefore: at(-60_000),
+      notAfter: at(0),
     }),
     {},
   );
   assert.equal(response.status, 200);
-  assert.equal((await response.json()).video.videoId, "recovered-video");
+  const body = await response.json();
+  assert.equal(body.video, undefined, "recovery must not adopt a video automatically");
+  assert.deepEqual(
+    body.candidates.map((candidate) => candidate.videoId),
+    ["candidate-video", "possibly-earlier-video"],
+    "earlier same-title uploads are shown but a later one is outside the window",
+  );
   assert.equal(urls.length, 2, urls.join("\n"));
   assert(urls[0].includes("part=contentDetails"));
   assert(urls[1].includes("playlistItems") && urls[1].includes("playlistId=UU-owner"));
@@ -94,24 +117,37 @@ test("outcome lookup refuses to guess and guards its input", async (t) => {
     });
   });
 
+  const now = new Date().toISOString();
   const miss = await latestUpload(
     await request("/api/youtube/latest-upload", {
       title: "Midnight",
       notBefore: new Date(Date.now() - 60_000).toISOString(),
+      notAfter: now,
     }),
     {},
   );
   assert.equal(miss.status, 404);
   assert.match((await miss.json()).error, /matches that title/);
 
-  const invalid = await latestUpload(
-    await request("/api/youtube/latest-upload", { title: "Midnight", notBefore: "yesterday" }),
-    {},
-  );
-  assert.equal(invalid.status, 400);
+  for (const body of [
+    { title: "Midnight", notBefore: "yesterday", notAfter: now },
+    { title: "Midnight", notBefore: now },
+    {
+      title: "Midnight",
+      notBefore: new Date(Date.now() + 60_000).toISOString(),
+      notAfter: now,
+    },
+  ]) {
+    const invalid = await latestUpload(await request("/api/youtube/latest-upload", body), {});
+    assert.equal(invalid.status, 400, JSON.stringify(body));
+  }
 
   const unauthorized = await latestUpload(
-    await request("/api/youtube/latest-upload", { title: "Midnight", notBefore: new Date().toISOString() }, "other@example.com"),
+    await request(
+      "/api/youtube/latest-upload",
+      { title: "Midnight", notBefore: now, notAfter: now },
+      "other@example.com",
+    ),
     {},
   );
   assert.equal(unauthorized.status, 403);

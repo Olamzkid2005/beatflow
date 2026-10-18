@@ -1,11 +1,11 @@
 /**
- * Matches an upload attempt to the video the channel actually received.
+ * Candidate uploads for an attempt whose response could not be read.
  *
- * The browser cannot read the resumable session's response, so the desk can be
- * left with an unknown outcome even though YouTube stored the video. The server
- * can still see the channel, so it looks for the newest upload with the same
- * title inside a short window around the attempt. Pure and framework-free, so
- * the matching rules are unit tested in Node.
+ * A title and a timestamp are not an identity: an earlier or later upload can
+ * share the title, and a retry can add another. The desk therefore shows every
+ * candidate inside the attempt window and records nothing until the owner
+ * explicitly confirms one. Pure and framework-free, so the window rules are
+ * unit tested in Node.
  */
 
 export type ChannelUpload = {
@@ -19,12 +19,17 @@ export type MatchInput = {
   title: string;
   /** When the attempt started, ISO 8601. */
   notBefore: string;
+  /** When the attempt stopped waiting for a readable response, ISO 8601. */
+  notAfter: string;
   /** Slack for clock differences between this machine and the API. */
   toleranceMs?: number;
 };
 
 /** Two minutes covers clock skew and the moment between navigation and upload. */
 export const MATCH_TOLERANCE_MS = 120_000;
+
+/** Candidates shown at once; more than this is a sign the title is not unique. */
+export const MAX_CANDIDATES = 10;
 
 function normalizeTitle(value: string): string {
   return value.replace(/\s+/g, " ").trim().toLowerCase();
@@ -63,22 +68,29 @@ export function parseChannelUploads(payload: unknown): ChannelUpload[] {
 }
 
 /**
- * Newest upload with the same title at or after `notBefore` (minus slack), or
- * null when nothing matches. Never guesses: a wrong ID would poison history.
+ * Every distinct upload with the same title inside the bounded attempt window,
+ * newest first. Returning a list is deliberate: the caller must not treat the
+ * newest row as proof that this attempt created it.
  */
-export function pickMatchingUpload(items: ChannelUpload[], input: MatchInput): ChannelUpload | null {
+export function findMatchingUploads(items: ChannelUpload[], input: MatchInput): ChannelUpload[] {
   const wanted = normalizeTitle(input.title);
-  const notBefore = Date.parse(input.notBefore);
-  if (!wanted || !Number.isFinite(notBefore)) return null;
+  const start = Date.parse(input.notBefore);
+  const end = Date.parse(input.notAfter);
+  if (!wanted || !Number.isFinite(start) || !Number.isFinite(end) || end < start) return [];
   const tolerance = input.toleranceMs ?? MATCH_TOLERANCE_MS;
+  const seen = new Set<string>();
 
-  return (
-    items
-      .filter((item) => normalizeTitle(item.title) === wanted)
-      .filter((item) => {
-        const published = Date.parse(item.publishedAt);
-        return Number.isFinite(published) && published >= notBefore - tolerance;
-      })
-      .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))[0] ?? null
-  );
+  return items
+    .filter((item) => normalizeTitle(item.title) === wanted)
+    .filter((item) => {
+      const published = Date.parse(item.publishedAt);
+      return (
+        Number.isFinite(published) &&
+        published >= start - tolerance &&
+        published <= end + tolerance
+      );
+    })
+    .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
+    .filter((item) => (seen.has(item.videoId) ? false : seen.add(item.videoId)))
+    .slice(0, MAX_CANDIDATES);
 }

@@ -9,7 +9,7 @@ import {
   normalizeEntries,
 } from "../lib/history-store.ts";
 import { historyStatus } from "../lib/history.ts";
-import { parseChannelUploads, pickMatchingUpload } from "../lib/youtube/reconcile.ts";
+import { findMatchingUploads, parseChannelUploads } from "../lib/youtube/reconcile.ts";
 
 function entry(videoId, createdAt = "2026-10-17T10:00:00Z", extra = {}) {
   return {
@@ -250,6 +250,11 @@ test("release state follows the schedule", () => {
   assert.equal(historyStatus(entry("a", "2026-10-17T10:00:00Z", { publishAt: future })), "scheduled");
   assert.equal(historyStatus(entry("b", "2026-10-17T10:00:00Z", { publishAt: past })), "published");
   assert.equal(historyStatus(entry("c")), "unlisted");
+  assert.equal(
+    historyStatus(entry("d", "2026-10-17T10:00:00Z", { privacyStatus: "unknown" })),
+    "unknown",
+    "a confirmed recovery must not claim a release state it never read",
+  );
 });
 
 test("channel uploads are parsed defensively", () => {
@@ -267,26 +272,37 @@ test("channel uploads are parsed defensively", () => {
   assert.deepEqual(parseChannelUploads({ items: "nope" }), []);
 });
 
-test("the newest matching upload inside the window wins, otherwise nothing", () => {
-  const attemptStart = "2026-10-17T12:00:00.000Z";
+test("recovery lists bounded candidates and never picks the newest as proof", () => {
+  const input = {
+    title: "Midnight Loop",
+    notBefore: "2026-10-17T12:00:00.000Z",
+    notAfter: "2026-10-17T12:02:00.000Z",
+  };
   const items = [
     { videoId: "old-same-title", title: "Midnight Loop", publishedAt: "2026-10-16T12:00:00Z" },
     { videoId: "just-before", title: "Midnight  Loop", publishedAt: "2026-10-17T11:58:00Z" },
     { videoId: "first", title: "midnight loop", publishedAt: "2026-10-17T12:00:30Z" },
     { videoId: "second", title: "Midnight Loop", publishedAt: "2026-10-17T12:01:00Z" },
+    { videoId: "first", title: "midnight loop", publishedAt: "2026-10-17T12:00:30Z" },
+    { videoId: "after-window", title: "Midnight Loop", publishedAt: "2026-10-17T12:10:00Z" },
     { videoId: "other", title: "Different track", publishedAt: "2026-10-17T12:01:30Z" },
   ];
 
-  assert.equal(pickMatchingUpload(items, { title: "Midnight Loop", notBefore: attemptStart }).videoId, "second");
-  assert.equal(
-    pickMatchingUpload(items, { title: "Midnight Loop", notBefore: attemptStart, toleranceMs: 0 }).videoId,
-    "second",
+  assert.deepEqual(
+    findMatchingUploads(items, input).map((item) => item.videoId),
+    ["second", "first", "just-before"],
+    "every in-window candidate is returned once, newest first",
   );
-  assert.equal(
-    pickMatchingUpload(items, { title: "Midnight Loop", notBefore: "2026-10-17T13:00:00Z" }),
-    null,
-    "an upload from before the attempt window must not be claimed",
+  assert.deepEqual(
+    findMatchingUploads(items, { ...input, toleranceMs: 0 }).map((item) => item.videoId),
+    ["second", "first"],
   );
-  assert.equal(pickMatchingUpload(items, { title: "Never uploaded", notBefore: attemptStart }), null);
-  assert.equal(pickMatchingUpload(items, { title: "Midnight Loop", notBefore: "nonsense" }), null);
+  assert.deepEqual(findMatchingUploads(items, { ...input, title: "Never uploaded" }), []);
+  assert.deepEqual(
+    findMatchingUploads(items, { ...input, notAfter: "2026-10-17T11:59:00Z" }),
+    [],
+    "an attempt window that ends before it starts has no candidates",
+  );
+  assert.deepEqual(findMatchingUploads(items, { ...input, notBefore: "nonsense" }), []);
+  assert.deepEqual(findMatchingUploads(items, { ...input, notAfter: "nonsense" }), []);
 });
