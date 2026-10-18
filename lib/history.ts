@@ -18,31 +18,35 @@ export { MAX_ENTRIES };
  * instead of throwing away an upload that already reached YouTube.
  */
 let controller: HistoryController | null = null;
+/** False once this session had to use memory because IndexedDB was unavailable. */
+let durable = true;
+
+function legacyStorage() {
+  if (typeof window === "undefined") return undefined;
+  return {
+    read: () => {
+      try {
+        return JSON.parse(window.localStorage.getItem(LEGACY_STORAGE_KEY) ?? "null");
+      } catch {
+        return null;
+      }
+    },
+    clear: () => window.localStorage.removeItem(LEGACY_STORAGE_KEY),
+  };
+}
+
+function memoryHistory(): HistoryController {
+  durable = false;
+  return createHistory({ backend: createMemoryBackend() });
+}
 
 function history(): HistoryController {
   if (controller) return controller;
-  let backend;
   try {
-    backend = createIndexedDbBackend();
+    controller = createHistory({ backend: createIndexedDbBackend(), legacy: legacyStorage() });
   } catch {
-    backend = createMemoryBackend();
+    controller = memoryHistory();
   }
-  controller = createHistory({
-    backend,
-    legacy:
-      typeof window === "undefined"
-        ? undefined
-        : {
-            read: () => {
-              try {
-                return JSON.parse(window.localStorage.getItem(LEGACY_STORAGE_KEY) ?? "null");
-              } catch {
-                return null;
-              }
-            },
-            clear: () => window.localStorage.removeItem(LEGACY_STORAGE_KEY),
-          },
-  });
   return controller;
 }
 
@@ -59,18 +63,35 @@ export async function readHistory(): Promise<UploadHistoryEntry[]> {
   }
 }
 
-export async function addHistoryEntry(entry: UploadHistoryEntry): Promise<void> {
-  if (typeof window === "undefined") return;
+/**
+ * Resolves true only when the entry is durably stored. A false result means the
+ * upload succeeded but this browser could not keep the receipt; callers must
+ * show a nonfatal warning instead of treating it as an upload failure.
+ */
+export async function addHistoryEntry(entry: UploadHistoryEntry): Promise<boolean> {
+  if (typeof window === "undefined") return false;
   try {
     await history().add(entry);
+    announce();
+    return durable;
   } catch {
-    // History is a convenience; never turn a successful upload into an error.
+    // A failed async open/write still must not lose the receipt for this
+    // session: keep it in memory and tell the user it is not durable.
+    const memory = memoryHistory();
+    controller = memory;
+    try {
+      await memory.add(entry);
+    } catch {
+      // The warning is still the honest result.
+    }
+    announce();
+    return false;
   }
-  announce();
 }
 
 export async function clearHistory(): Promise<void> {
   if (typeof window === "undefined") return;
+  // Let failures reject: the page must not show an empty list it did not clear.
   await history().clear();
   announce();
 }

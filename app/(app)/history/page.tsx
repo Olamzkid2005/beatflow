@@ -55,6 +55,7 @@ function statusLabel(status: ReturnType<typeof historyStatus>) {
 export default function HistoryPage() {
   const [entries, setEntries] = useState<UploadHistoryEntry[] | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [clearError, setClearError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -79,8 +80,14 @@ export default function HistoryPage() {
 
   async function handleClear() {
     if (!window.confirm("Clear all upload history from this browser?")) return;
-    setEntries([]);
-    await clearHistory();
+    setClearError(null);
+    try {
+      await clearHistory();
+      setEntries([]);
+    } catch {
+      // Do not show an empty list when the delete did not commit.
+      setClearError("This browser could not clear history. Nothing was deleted.");
+    }
   }
 
   const filtered = (entries ?? []).filter((entry) => {
@@ -149,6 +156,12 @@ export default function HistoryPage() {
           </Button>
         ) : null}
       </div>
+
+      {clearError ? (
+        <p role="alert" className="rounded-xl border border-error/25 bg-error-container/10 p-3 text-sm text-error">
+          {clearError}
+        </p>
+      ) : null}
 
       {entries === null ? (
         <div className="flex flex-col gap-3" aria-label="Loading upload history" role="status">

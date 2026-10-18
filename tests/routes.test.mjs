@@ -153,6 +153,39 @@ test("outcome lookup refuses to guess and guards its input", async (t) => {
   assert.equal(unauthorized.status, 403);
 });
 
+test("upload initialization forwards immediate visibility and rejects a public schedule", async (t) => {
+  let sent;
+  t.mock.method(globalThis, "fetch", async (_url, init) => {
+    sent = JSON.parse(init.body);
+    return new Response(null, { status: 200, headers: { Location: "https://www.googleapis.com/upload/session" } });
+  });
+  const response = await POST(
+    await request("/api/youtube/init-upload", {
+      metadata: { title: "Public track", privacyStatus: "public" },
+      fileSize: 108389,
+    }),
+    {},
+  );
+  assert.equal(response.status, 200);
+  assert.equal(sent.status.privacyStatus, "public");
+  assert.equal(sent.status.publishAt, undefined);
+
+  const fetchMock = globalThis.fetch.mock;
+  const scheduled = await POST(
+    await request("/api/youtube/init-upload", {
+      metadata: {
+        title: "Scheduled track",
+        privacyStatus: "public",
+        publishAt: "2028-01-01T10:00:00Z",
+      },
+      fileSize: 108389,
+    }),
+    {},
+  );
+  assert.equal(scheduled.status, 400);
+  assert.equal(fetchMock.callCount(), 1, "invalid privacy must reject before contacting Google");
+});
+
 test("upload initialization sends only metadata/size and persists auth cookies", async (t) => {
   t.mock.method(globalThis, "fetch", async (_url, init) => {
     assert(init.headers instanceof Headers);

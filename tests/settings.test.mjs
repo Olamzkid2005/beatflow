@@ -81,6 +81,27 @@ test("a browser that refuses to store raises so the form can report it", () => {
   assert.throws(() => writeSettings({ ...DEFAULT_SETTINGS, defaultTags: [] }, blocked), /QuotaExceeded/);
 });
 
+test("a denied storage getter falls back to defaults and refuses a false save", () => {
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      get localStorage() {
+        throw new Error("SecurityError: storage denied");
+      },
+    },
+  });
+  try {
+    assert.deepEqual(readSettings(), { ...DEFAULT_SETTINGS, defaultTags: [] });
+    assert.throws(
+      () => writeSettings({ ...DEFAULT_SETTINGS, defaultTags: [] }),
+      /storage is unavailable/i,
+    );
+    assert.throws(() => resetSettings(), /storage is unavailable/i);
+  } finally {
+    delete globalThis.window;
+  }
+});
+
 test("defaults are never shared between reads", () => {
   const first = readSettings(fakeStorage());
   first.defaultTags.push("mutated");

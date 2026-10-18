@@ -8,7 +8,7 @@ import {
   MAX_ENTRIES,
   normalizeEntries,
 } from "../lib/history-store.ts";
-import { historyStatus } from "../lib/history.ts";
+import { addHistoryEntry, historyStatus, readHistory } from "../lib/history.ts";
 import { findMatchingUploads, parseChannelUploads } from "../lib/youtube/reconcile.ts";
 
 function entry(videoId, createdAt = "2026-10-17T10:00:00Z", extra = {}) {
@@ -242,6 +242,38 @@ test("clear and remove reject an aborted transaction without claiming success", 
 
   const rows = databases.get("aborting-clear").get("uploads");
   assert.deepEqual([...rows.keys()], ["keep"], "the stored row survives the aborted writes");
+});
+
+test("an async IndexedDB open failure keeps the receipt in memory and reports it as non-durable", async () => {
+  const previousWindow = globalThis.window;
+  const previousIndexedDb = globalThis.indexedDB;
+  globalThis.window = {
+    dispatchEvent: () => {},
+    localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+  };
+  globalThis.indexedDB = {
+    open() {
+      const request = {};
+      queueMicrotask(() => {
+        request.error = new Error("open denied");
+        request.onerror?.(new Event("error"));
+      });
+      return request;
+    },
+  };
+  try {
+    assert.equal(await addHistoryEntry(entry("receipt")), false, "a fallback write is not durable");
+    assert.deepEqual(
+      (await readHistory()).map((row) => row.videoId),
+      ["receipt"],
+      "the successful upload receipt must still be visible this session",
+    );
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+    if (previousIndexedDb === undefined) delete globalThis.indexedDB;
+    else globalThis.indexedDB = previousIndexedDb;
+  }
 });
 
 test("release state follows the schedule", () => {

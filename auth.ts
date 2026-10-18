@@ -8,11 +8,21 @@ const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 /** Refresh 60s before the access token actually expires. */
 const EXPIRY_SLACK_SECONDS = 60;
 
-async function refreshAccessToken(token: JWT): Promise<JWT> {
-  if (!token.refreshToken) {
-    return { ...token, accessToken: undefined, error: "MissingRefreshToken" };
-  }
+/**
+ * One in-flight refresh per refresh token. Without this, two concurrent expired
+ * requests each call Google; if the first rotates the refresh token, the second
+ * can reject and overwrite the successful cookie with a stale failure.
+ *
+ * This coordinates one server process only. Separate serverless instances still
+ * need provider-side behavior or shared state, which is deliberately not added.
+ */
+const inFlightRefreshes = new Map<string, Promise<JWT>>();
 
+export function refreshInFlightCount(): number {
+  return inFlightRefreshes.size;
+}
+
+async function requestRefresh(token: JWT, refreshToken: string): Promise<JWT> {
   try {
     const response = await fetch(GOOGLE_TOKEN_ENDPOINT, {
       method: "POST",
@@ -21,7 +31,7 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
         client_id: process.env.GOOGLE_CLIENT_ID ?? "",
         client_secret: process.env.GOOGLE_CLIENT_SECRET ?? "",
         grant_type: "refresh_token",
-        refresh_token: token.refreshToken,
+        refresh_token: refreshToken,
       }),
       cache: "no-store",
       signal: AbortSignal.timeout(10_000),
@@ -43,11 +53,37 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
       accessToken: payload.access_token,
       expiresAt: Math.floor(Date.now() / 1000) + (payload.expires_in ?? 3600),
       // Google only returns a new refresh token when it rotates one.
-      refreshToken: payload.refresh_token ?? token.refreshToken,
+      refreshToken: payload.refresh_token ?? refreshToken,
       error: undefined,
     };
   } catch {
+    // A failed request must never keep a stale access token or credentials that
+    // another concurrent refresh may already have rotated.
     return { ...token, accessToken: undefined, error: "RefreshAccessTokenError" };
+  }
+}
+
+async function refreshAccessToken(token: JWT): Promise<JWT> {
+  const refreshToken = token.refreshToken;
+  if (!refreshToken) {
+    return { ...token, accessToken: undefined, error: "MissingRefreshToken" };
+  }
+
+  const existing = inFlightRefreshes.get(refreshToken);
+  if (existing) {
+    const shared = await existing;
+    // Keep this request's session fields while sharing the refreshed tokens.
+    return { ...token, ...shared, email: shared.email ?? token.email };
+  }
+
+  const pending = requestRefresh(token, refreshToken);
+  inFlightRefreshes.set(refreshToken, pending);
+  try {
+    return await pending;
+  } finally {
+    if (inFlightRefreshes.get(refreshToken) === pending) {
+      inFlightRefreshes.delete(refreshToken);
+    }
   }
 }
 

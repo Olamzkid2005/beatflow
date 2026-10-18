@@ -25,7 +25,7 @@ const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 assert(existsSync(chrome), "Set CHROME_PATH to an installed Chrome binary.");
 assert(existsSync(join(root, ".next/BUILD_ID")), "Run npm run build first.");
 
-const TEST_TITLE = "BeatFlow M0 test — 5 seconds";
+const UPLOAD_TITLE = "Browser check release";
 const results = [];
 const pumps = new Set();
 const record = (name, detail = "") => {
@@ -145,6 +145,32 @@ try {
       node.click();
       return true;
     })()`);
+  const setInputValue = (selector, value) =>
+    evaluate(`(() => {
+      const input = document.querySelector(${JSON.stringify(selector)});
+      if (!input) throw new Error("No input ${selector}");
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+      setter.call(input, ${JSON.stringify(value)});
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      return input.value;
+    })()`);
+  const pickBytes = (selector, name, size, type) =>
+    evaluate(`(() => {
+      const input = document.querySelector(${JSON.stringify(selector)});
+      const data = new DataTransfer();
+      data.items.add(new File([new Uint8Array(${size})], ${JSON.stringify(name)}, { type: ${JSON.stringify(type)} }));
+      input.files = data.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      return input.files[0].size;
+    })()`);
+  const setSelectValue = (selector, value) =>
+    evaluate(`(() => {
+      const select = document.querySelector(${JSON.stringify(selector)});
+      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
+      setter.call(select, ${JSON.stringify(value)});
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      return select.value;
+    })()`);
   const pickFile = (selector, url, name, type) =>
     evaluate(`(async () => {
       const input = document.querySelector(${JSON.stringify(selector)});
@@ -187,6 +213,7 @@ try {
   assert.equal(cookie.success, true);
 
   const paused = [];
+  const uploadBodies = [];
   const fetchRule = { urlPattern: "*", requestStage: "Request" };
   await send("Fetch.enable", { patterns: [fetchRule] });
   // Hold the upload handshake; everything else continues untouched.
@@ -195,6 +222,7 @@ try {
     const { requestId, request } = message.params;
     if (request.url.includes("/api/youtube/init-upload")) {
       paused.push(requestId);
+      uploadBodies.push(request.postData ?? "");
       return;
     }
     return send("Fetch.continueRequest", { requestId });
@@ -291,6 +319,14 @@ try {
   await waitFor("document.body.innerText.includes('Release history')");
   await clickText("a", "Studio");
   await waitFor("location.pathname === '/generate'");
+
+  await pickFile("#render-audio", "/beatflow-m0-test-5s.mp4", "proof-track.mp4", "audio/mp4");
+  await waitFor("document.querySelector('#render-track-name')?.value === 'proof track'");
+  await pickFile("#render-audio", "/beatflow-m0-test-5s.mp4", "second_track.mp4", "audio/mp4");
+  await waitFor("document.querySelector('#render-track-name')?.value === 'second track'");
+  record("track name follows a newly selected source");
+  await pickFile("#render-audio", "/beatflow-m0-test-5s.mp4", "proof-track.mp4", "audio/mp4");
+
   await startRender();
   record("render completed in production build");
 
@@ -298,9 +334,22 @@ try {
   await waitFor(
     "document.querySelector('#video-file').closest('div.overflow-hidden').innerText.includes('proof track.mp4')",
   );
-  record("rendered MP4 handed off to the upload desk");
+  assert.equal(await evaluate("document.querySelector('#video-title').value"), "proof track");
+  record("handoff fills an untouched title from the rendered track");
+  await setInputValue("#video-title", UPLOAD_TITLE);
+
+  assert.match(await bodyText(), /Private until publish/);
+  await setInputValue("#video-schedule", "");
+  await waitFor("document.body.innerText.includes('Public immediately')");
+  await clickText("button", "Public immediately");
+  await waitFor("document.body.innerText.includes('uploads public immediately')");
+  record("immediate public visibility is selectable when no schedule is set");
 
   await startHeldUpload();
+  const uploadBody = JSON.parse(uploadBodies.at(-1));
+  assert.equal(uploadBody.metadata.privacyStatus, "public");
+  assert.equal(uploadBody.metadata.publishAt ?? null, null);
+  record("the immediate visibility choice reaches init-upload");
   record("upload held open by a paused init-upload request");
 
   const locked = await evaluate(`(() => {
@@ -378,10 +427,17 @@ try {
   await clickText("a", "Studio");
   await waitFor("location.pathname === '/generate'");
   await startRender();
+  await setInputValue("#video-title", "Kept title");
   await clickText("button", "Use for upload");
   await waitFor(
     "document.querySelector('#video-file').closest('div.overflow-hidden').innerText.includes('proof track.mp4')",
   );
+  assert.equal(
+    await evaluate("document.querySelector('#video-title').value"),
+    "Kept title",
+    "a handoff overwrote an explicitly edited title",
+  );
+  record("handoff preserves a title the owner edited");
 
   await send("Fetch.enable", { patterns: [fetchRule] });
   const pump2 = setInterval(() => {
@@ -424,11 +480,12 @@ try {
   await clickText("a", "Studio");
   await waitFor("location.pathname === '/generate'");
   await pickFile("#video-file", "/beatflow-m0-test-5s.mp4", "recovery-source.mp4", "video/mp4");
+  await setInputValue("#video-title", UPLOAD_TITLE);
   await waitFor("document.body.innerText.includes('recovery-source.mp4')");
 
   const candidate = {
     videoId: "confirmed-recovered",
-    title: TEST_TITLE,
+    title: UPLOAD_TITLE,
     publishedAt: new Date(Date.now() - 5_000).toISOString(),
   };
   const fulfill = (requestId, body) =>
@@ -485,6 +542,55 @@ try {
   record("history marks recovered release state as unverified");
 
   clearInterval(recoveryPump);
+  await send("Fetch.disable");
+
+  // F10: a partial transfer that fails must never read as complete.
+  await clickText("a", "Studio");
+  await waitFor("location.pathname === '/generate'");
+  await pickBytes("#video-file", "large-partial.mp4", 600_000, "video/mp4");
+  await setInputValue("#video-title", "Partial upload check");
+  await setSelectValue("#video-chunk", "262144");
+  let sessionPuts = 0;
+  await send("Fetch.enable", { patterns: [fetchRule] });
+  const partialPump = setInterval(() => {
+    while (events.length) {
+      const event = events.shift();
+      if (event.method !== "Fetch.requestPaused") continue;
+      const { requestId } = event.params;
+      if (event.params.request.url.includes("/api/youtube/init-upload")) {
+        void fulfill(requestId, { sessionUri: "/fake-session" });
+      } else if (event.params.request.url.includes("/fake-session")) {
+        sessionPuts += 1;
+        if (sessionPuts === 1) {
+          void send("Fetch.fulfillRequest", {
+            requestId,
+            responseCode: 308,
+            responseHeaders: [{ name: "Range", value: "bytes=0-262143" }],
+          });
+        } else {
+          void send("Fetch.fulfillRequest", {
+            requestId,
+            responseCode: 400,
+            responseHeaders: [{ name: "Content-Type", value: "text/plain" }],
+            body: Buffer.from("invalid chunk").toString("base64"),
+          });
+        }
+      } else {
+        void send("Fetch.continueRequest", { requestId });
+      }
+    }
+  }, 20);
+  pumps.add(partialPump);
+
+  await clickText("button", "Start upload");
+  await waitFor("document.body.innerText.includes('Upload stopped')");
+  const stoppedText = await bodyText();
+  assert.match(stoppedText, /Not handed off/);
+  assert.match(stoppedText, /after 4[34]%/);
+  assert.doesNotMatch(stoppedText, /Upload complete/);
+  record("a failed partial transfer is not labeled complete or handed off");
+
+  clearInterval(partialPump);
   await send("Fetch.disable");
 
   console.log(`F02/F03 PASS — ${version.product}`);

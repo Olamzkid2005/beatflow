@@ -62,9 +62,16 @@ type RecoveryCandidate = {
   publishedAt: string;
 };
 
-const TEST_TITLE = "BeatFlow M0 test — 5 seconds";
-const DEFAULT_DESCRIPTION = "M0 pipeline proof for BeatFlow.";
 const subscribe = () => () => {};
+
+/** Filename-derived title, used only while the owner has not edited the field. */
+function titleFromFileName(name: string): string {
+  return name
+    .replace(/\.[^.]+$/, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 function defaultSchedule(timeZone: string): string {
   return nextScheduleValue(new Date(Date.now()), timeZone);
@@ -143,10 +150,8 @@ function UploadStudio() {
   // UploadStudio only mounts after the client-only gate in GeneratePage, so
   // reading local storage in these initializers cannot run during SSR.
   const [defaults] = useState(readSettings);
-  const [title, setTitle] = useState(TEST_TITLE);
-  const [description, setDescription] = useState(
-    () => defaults.descriptionTemplate.trim() || DEFAULT_DESCRIPTION,
-  );
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState(() => defaults.descriptionTemplate);
   const [tags, setTags] = useState<string[]>(() => [...defaults.defaultTags]);
   // Resolve the working zone before the default: the input holds wall time in
   // that zone, not in the browser's zone.
@@ -172,9 +177,12 @@ function UploadStudio() {
   const [result, setResult] = useState<UploadResult | null>(null);
   const [recovering, setRecovering] = useState(false);
   const [candidates, setCandidates] = useState<RecoveryCandidate[] | null>(null);
+  const [immediatePrivacy, setImmediatePrivacy] = useState<"unlisted" | "public">("unlisted");
+  const [historyWarning, setHistoryWarning] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const attemptRef = useRef<UploadAttempt | null>(null);
+  const titleTouchedRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -189,6 +197,17 @@ function UploadStudio() {
     "An upload is still in progress. Leaving this page can lose the transfer progress. Leave anyway?",
   );
 
+  /** Records the receipt locally; a storage failure must not hide the upload. */
+  function saveHistory(entry: Parameters<typeof addHistoryEntry>[0]) {
+    void addHistoryEntry(entry).then((saved) => {
+      if (!saved) {
+        setHistoryWarning(
+          "The video reached YouTube, but this browser could not save it to local history. Copy the video ID before leaving.",
+        );
+      }
+    });
+  }
+
   async function startUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (abortRef.current) return;
@@ -197,6 +216,7 @@ function UploadStudio() {
     setOutcomeUnknown(false);
     setResult(null);
     setCandidates(null);
+    setHistoryWarning(null);
     setProgress(null);
 
     if (!file) {
@@ -220,6 +240,9 @@ function UploadStudio() {
       setError(scheduleError instanceof Error ? scheduleError.message : "Invalid schedule.");
       return;
     }
+    // Scheduling always publishes private until the chosen instant; an
+    // immediate upload keeps the owner's explicit visibility choice.
+    const privacyStatus = publishAt ? "private" : immediatePrivacy;
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -227,7 +250,7 @@ function UploadStudio() {
     attemptRef.current = {
       title: title.trim(),
       publishAt,
-      privacyStatus: publishAt ? "private" : "unlisted",
+      privacyStatus,
       startedAt: new Date().toISOString(),
     };
     setBusy(true);
@@ -242,8 +265,7 @@ function UploadStudio() {
             title,
             description,
             tags,
-            // A scheduled upload must be private.
-            privacyStatus: publishAt ? "private" : "unlisted",
+            privacyStatus,
             publishAt,
           },
           fileSize: file.size,
@@ -281,11 +303,11 @@ function UploadStudio() {
       const completed: UploadResult = {
         videoId,
         publishAt,
-        privacyStatus: publishAt ? "private" : "unlisted",
+        privacyStatus,
       };
       setResult(completed);
 
-      void addHistoryEntry({
+      saveHistory({
         videoId,
         title: title.trim(),
         channelTitle: channel?.title ?? null,
@@ -385,7 +407,7 @@ function UploadStudio() {
       privacyStatus: "unknown",
       recovered: true,
     });
-    void addHistoryEntry({
+    saveHistory({
       videoId: candidate.videoId,
       title: attempt.title,
       channelTitle: channel?.title ?? null,
@@ -433,9 +455,14 @@ function UploadStudio() {
       <RenderStudio
         producerName={defaults.producerName}
         uploading={busy}
-        onRenderedFile={(rendered, artifactId) =>
-          setSelection(adoptArtifact(rendered, artifactId))
-        }
+        onRenderedFile={(rendered, artifactId) => {
+          setSelection(adoptArtifact(rendered, artifactId));
+          // A track handoff fills an untouched title with its own name instead
+          // of leaving the previous demo or track name in place.
+          if (!titleTouchedRef.current) {
+            setTitle(titleFromFileName(rendered.name));
+          }
+        }}
         onReleaseArtifact={(artifactId) =>
           setSelection((current) => releaseArtifact(current, artifactId))
         }
@@ -610,7 +637,15 @@ function UploadStudio() {
                     Upload progress
                   </p>
                   <p className="mt-1 text-sm font-medium">
-                    {busy ? "Sending to YouTube" : "Upload complete"}
+                    {busy
+                      ? "Sending to YouTube"
+                      : result
+                        ? "Upload complete"
+                        : outcomeUnknown
+                          ? "Outcome unknown"
+                          : error
+                            ? "Upload stopped"
+                            : "Upload ended"}
                   </p>
                 </div>
                 <span className="font-mono text-lg text-primary">{progress?.percent ?? 0}%</span>
@@ -621,8 +656,14 @@ function UploadStudio() {
                   {formatBytes(progress?.uploadedBytes ?? 0)} of{" "}
                   {formatBytes(progress?.totalBytes ?? file?.size ?? 0)}
                 </span>
-                <span>{busy ? "Keep this tab open" : "Handed off"}</span>
+                <span>{busy ? "Keep this tab open" : result ? "Handed off" : "Not handed off"}</span>
               </div>
+              {!busy && !result ? (
+                <p className="mt-2 text-xs leading-5 text-on-surface-variant">
+                  Only a confirmed video result counts as complete. This transfer did not produce
+                  one{progress ? ` after ${progress.percent}%` : ""}.
+                </p>
+              ) : null}
             </Card>
           ) : null}
 
@@ -744,6 +785,14 @@ function UploadStudio() {
                           : `Uploaded as ${result.privacyStatus}`}
                       </p>
                     )}
+                    {historyWarning ? (
+                      <p
+                        role="status"
+                        className="mt-2 rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-2.5 py-2 text-xs leading-5 text-amber-200"
+                      >
+                        {historyWarning}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -784,7 +833,10 @@ function UploadStudio() {
                   <Input
                     id="video-title"
                     value={title}
-                    onChange={(event) => setTitle(event.target.value)}
+                    onChange={(event) => {
+                      titleTouchedRef.current = true;
+                      setTitle(event.target.value);
+                    }}
                     maxLength={100}
                     placeholder="Name this release"
                   />
@@ -851,21 +903,41 @@ function UploadStudio() {
                   </p>
                 ) : (
                   <p className="text-xs leading-5 text-on-surface-variant">
-                    No schedule · uploads as unlisted immediately
+                    No schedule · uploads {immediatePrivacy} immediately
                   </p>
                 )}
                 <p className="text-xs leading-5 text-on-surface-variant">
                   Sent as UTC ISO 8601 and kept private until publication. Clear the field to
-                  upload as unlisted immediately.
+                  choose immediate visibility.
                 </p>
 
                 <div className="rounded-xl border border-outline-variant/60 bg-surface-container-lowest/60 p-3">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs text-on-surface-variant">Privacy</span>
-                    <Badge tone={schedule ? "tertiary" : "neutral"}>
-                      {schedule ? "Private until publish" : "Unlisted"}
+                    <span className="text-xs text-on-surface-variant">Visibility</span>
+                    <Badge tone={schedule ? "tertiary" : immediatePrivacy === "public" ? "success" : "neutral"}>
+                      {schedule ? "Private until publish" : immediatePrivacy === "public" ? "Public" : "Unlisted"}
                     </Badge>
                   </div>
+                  {!schedule ? (
+                    <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Immediate visibility">
+                      {(["unlisted", "public"] as const).map((value) => (
+                        <Button
+                          key={value}
+                          type="button"
+                          size="sm"
+                          variant={immediatePrivacy === value ? "secondary" : "ghost"}
+                          aria-pressed={immediatePrivacy === value}
+                          onClick={() => setImmediatePrivacy(value)}
+                        >
+                          {value === "public" ? "Public immediately" : "Unlisted immediately"}
+                        </Button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs leading-5 text-on-surface-variant">
+                      Scheduled uploads stay private until the publish time.
+                    </p>
+                  )}
                   <div className="mt-2 flex items-center justify-between gap-3">
                     <span className="text-xs text-on-surface-variant">Category</span>
                     <span className="font-mono text-[10px] text-on-surface">Music</span>

@@ -74,11 +74,17 @@ export async function encodeMp4({
 
     signal?.throwIfAborted();
     await audioSource.add(audio);
+    // Audio encoding is the last long await; aborting here must cancel the
+    // output instead of finalizing a partial file.
+    signal?.throwIfAborted();
     onProgress?.("audio", 1);
 
     videoSource.close();
     audioSource.close();
+    signal?.throwIfAborted();
     await output.finalize();
+    // Finalization is the commit boundary: once it completes the artifact is
+    // valid, so a late abort must not pretend the work was cancelled.
     onProgress?.("finalize", 1);
 
     const buffer = target.buffer;

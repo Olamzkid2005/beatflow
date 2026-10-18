@@ -112,10 +112,15 @@ function SettingsForm() {
 
   function handleReset() {
     if (!window.confirm("Reset producer settings in this browser?")) return;
-    resetSettings();
-    setSettings({ ...DEFAULT_SETTINGS, defaultTags: [] });
-    setError(null);
-    setSaved(false);
+    try {
+      resetSettings();
+      setSettings({ ...DEFAULT_SETTINGS, defaultTags: [] });
+      setError(null);
+      setSaved(false);
+    } catch {
+      setError("This browser blocked local storage, so the settings could not be reset.");
+      setSaved(false);
+    }
   }
 
   return (

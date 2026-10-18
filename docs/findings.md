@@ -30,13 +30,13 @@ This report consolidates the fresh codebase review and a second targeted check o
 | F07 | **Done** | P2 | Long titles overlap branding and can clip outside the frame | Actual fonts + canvas bounds | **Targeted follow-up** |
 | F08 | **Done** | P2 | Invalid FPS can produce an audio-only `video/mp4` result | Actual encoder + media readback | **Targeted follow-up** |
 | F09 | **Done** | P2 | Render boundary neither validates nor snapshots its input | Actual `renderVideo()` calls | **Targeted follow-up** |
-| F10 | Open | P2 | Failed partial uploads are labeled complete | Production Chrome UI | Fresh review |
-| F11 | Open | P2 | Track defaults and upload metadata become stale | Production Chrome UI | Fresh review |
-| F12 | Open | P2 | Storage denial can crash initialization or silently lose history | Actual-source reproduction + inspection | Fresh review |
-| F13 | Open | P2 | Abort during audio encoding does not stop finalization | Controlled encoder-boundary reproduction | Fresh review |
-| F14 | Open | P2 | Output uses sRGB transfer, not full BT.709 signalling | Container and H.264 SPS inspection | Fresh review |
-| F15 | Open | P2 | Immediate public/unlisted visibility is not editable | Source/UI inspection; spec gap | Fresh review |
-| F16 | Open | P2 | Parallel refresh responses can overwrite successful rotated credentials | Synthetic Auth.js requests; conditional risk | **Targeted follow-up** |
+| F10 | **Done** | P2 | Failed partial uploads are labeled complete | Production Chrome UI | Fresh review |
+| F11 | **Done** | P2 | Track defaults and upload metadata become stale | Production Chrome UI | Fresh review |
+| F12 | **Done** | P2 | Storage denial can crash initialization or silently lose history | Actual-source reproduction + inspection | Fresh review |
+| F13 | **Done** | P2 | Abort during audio encoding does not stop finalization | Controlled encoder-boundary reproduction | Fresh review |
+| F14 | Open — blocked | P2 | Output uses sRGB transfer, not full BT.709 signalling | Container and H.264 SPS inspection | Fresh review |
+| F15 | **Done** | P2 | Immediate public/unlisted visibility is not editable | Source/UI inspection; spec gap | Fresh review |
+| F16 | **Done** | P2 | Parallel refresh responses can overwrite successful rotated credentials | Synthetic Auth.js requests; conditional risk | **Targeted follow-up** |
 
 ## Detailed findings
 
@@ -481,3 +481,43 @@ Migration now reads the legacy rows, skips IDs already present, writes the rest 
 - Tests: `tests/time.test.mjs` checks Tokyo/New York wall times, a date-line crossing, the spring-forward boundary, and the exact now+10m round trip.
 - `npm run upload:check` (Chrome 155.0.8059.80) now **17/17**: with the browser forced to `America/New_York` and then `Europe/Berlin` while the saved zone is `Asia/Tokyo`, the default input stays Tokyo wall time and the displayed UTC stays within two minutes of now+10m.
 - **Limits:** the fall-back ambiguous hour still rejects by design, and no deployed Google upload was performed.
+
+### F10 — Upload state only claims completion after a confirmed result — **PASS**, 18 October 2026
+
+- The progress card no longer equates `busy === false` with completion. Its header distinguishes sending, confirmed result, unknown outcome, stopped, and ended-without-result; “Handed off” appears only with a result, and a failed transfer explains that no confirmed result exists.
+- `npm run upload:check` drives a real 256 KiB–chunked transfer: first chunk acknowledged with `308`, second rejected with `400`. The page shows **Upload stopped**, **Not handed off**, and the partial percentage — never “Upload complete”.
+
+### F11 — Track identity and handoff metadata stay current — **PASS**, 18 October 2026
+
+- `components/render-studio.tsx` tracks whether the owner edited the track name. Selecting a new source replaces an untouched name and preserves an explicit edit; clearing the audio resets it.
+- The desk starts with an empty title and no demo description fallback. A handoff fills an untouched title from the rendered file; an edited title is preserved.
+- `npm run upload:check`: selecting `Second_Track.mp3` changes the name to “Second Track”; a handoff fills “proof track”; a later handoff keeps an edited “Kept title”.
+
+### F12 — Storage denial is handled without false saves or lost receipts — **PASS**, 18 October 2026
+
+- `readSettings()` catches a throwing `localStorage` getter; `writeSettings()`/`resetSettings()` throw so the form reports the refusal instead of claiming a save.
+- `addHistoryEntry()` now resolves `false` when storage is unavailable and keeps the receipt in a session-memory fallback; the desk shows a nonfatal “not saved locally” warning while preserving the successful upload. `clearHistory()` rejects on failure, and the page keeps its rows instead of optimistically emptying.
+- Tests: a denied storage getter returns defaults and refuses writes; an asynchronous IndexedDB open failure returns `false` while the receipt remains readable this session.
+- **Limits:** durability retries on a later page load, not automatically within the failed session; the denied-storage UI itself was not browser-driven.
+
+### F13 — Cancellation stops before finalization — **PASS**, 18 October 2026
+
+- `encodeMp4()` re-checks the abort signal after the long audio await and immediately before `finalize()`. An abort reaches the existing catch, which cancels the output. Finalization is documented as the commit boundary: a late abort after it does not pretend the work was cancelled.
+- `npm run fps:check` aborts during audio encoding in real Chrome: the promise rejects with `AbortError`, no blob is returned, and the 30 fps readback still passes.
+
+### F15 — Immediate visibility is editable; scheduled stays private — **PASS**, 18 October 2026
+
+- The schedule card now offers **Unlisted immediately** / **Public immediately** when no schedule is set; a schedule replaces the selector with “Private until publish”. The chosen value is sent in `init-upload`; scheduling computes `private`.
+- Metadata already rejected non-private schedules and forced `private` in the video resource; new Node tests assert immediate public/unlisted pass through and a public schedule rejects with 400 before any Google call.
+- `npm run upload:check` selects public, clears the schedule, and asserts the paused `init-upload` body carries `privacyStatus: "public"` with no `publishAt`.
+
+### F16 — Concurrent refreshes share one request — **PASS for one server process**, 18 October 2026
+
+- `auth.ts` now keeps one in-flight refresh promise per refresh token. Concurrent expired requests share its result (success or failure), so a rotated token cannot be overwritten by a parallel failure from the same process.
+- Tests: two concurrent expired owner requests produce one token-endpoint call; both persist the rotated cookie; a shared failure returns 401 to both.
+- **Limit:** the single-flight map is process-local. Separate serverless instances still need provider-side rotation behavior or shared coordination, which was deliberately not added; actual Google behavior remains unverified.
+
+### F14 — BT.709 transfer signalling remains **OPEN (blocked)**, 18 October 2026
+
+- Mediabunny 1.61.4's `VideoEncodingConfig` exposes codec, quality, key-frame interval, sizing and transforms, but no color primaries/transfer/matrix option. `CanvasSource` encodes 2D-canvas frames, and the resulting file still carries transfer 13 (sRGB) in both `colr` and SPS VUI.
+- A real fix needs a color-managed conversion (linearize sRGB, encode with the BT.709 transfer function) before the encoder, not a metadata relabel. That pipeline was not implemented in this pass, so this finding is not claimed as repaired and no output was relabelled.

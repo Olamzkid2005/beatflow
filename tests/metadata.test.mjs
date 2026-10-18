@@ -9,6 +9,15 @@ test("counts comma and quoted multiword-tag overhead toward 500 characters", () 
   assert.equal(videoMetadataSchema.safeParse({ ...base, tags: ["x".repeat(499), "y"] }).success, false);
 });
 
+test("immediate public and unlisted choices reach the video resource unchanged", () => {
+  for (const privacyStatus of ["public", "unlisted"]) {
+    const metadata = videoMetadataSchema.parse({ title: "Track", privacyStatus });
+    const resource = buildVideoResource(metadata);
+    assert.equal(resource.status.privacyStatus, privacyStatus);
+    assert.equal("publishAt" in resource.status, false);
+  }
+});
+
 test("rejects angle brackets in descriptions and enforces UTF-8 bytes", () => {
   assert.equal(videoMetadataSchema.safeParse({ ...base, description: "<invalid>" }).success, false);
   assert.equal(videoMetadataSchema.safeParse({ ...base, description: "é".repeat(2501) }).success, false);

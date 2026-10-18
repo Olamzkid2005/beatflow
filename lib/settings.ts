@@ -19,7 +19,13 @@ export type SettingsStorage = Pick<Storage, "getItem" | "setItem" | "removeItem"
 
 function storageOrNull(storage?: SettingsStorage | null): SettingsStorage | null {
   if (storage) return storage;
-  return typeof window === "undefined" ? null : window.localStorage;
+  if (typeof window === "undefined") return null;
+  try {
+    // A denied storage policy throws from the getter itself, before any read.
+    return window.localStorage;
+  } catch {
+    return null;
+  }
 }
 
 export function readSettings(storage?: SettingsStorage | null): ProducerSettings {
@@ -47,14 +53,21 @@ export function readSettings(storage?: SettingsStorage | null): ProducerSettings
 /** Throws when the browser refuses to store the settings, so the form can say so. */
 export function writeSettings(settings: ProducerSettings, storage?: SettingsStorage | null): void {
   const store = storageOrNull(storage);
-  if (!store) return;
+  if (!store) {
+    // Server rendering has no storage; a browser that denied it must not look saved.
+    if (typeof window !== "undefined") throw new Error("Local storage is unavailable in this browser.");
+    return;
+  }
   store.setItem(STORAGE_KEY, JSON.stringify(settings));
   announce();
 }
 
 export function resetSettings(storage?: SettingsStorage | null): void {
   const store = storageOrNull(storage);
-  if (!store) return;
+  if (!store) {
+    if (typeof window !== "undefined") throw new Error("Local storage is unavailable in this browser.");
+    return;
+  }
   store.removeItem(STORAGE_KEY);
   announce();
 }

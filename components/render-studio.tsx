@@ -92,6 +92,7 @@ export function RenderStudio({
   const bitmapRef = useRef<{ file: File; bitmap: ImageBitmap } | null>(null);
   const resultUrlRef = useRef<string | null>(null);
   const resultBlobRef = useRef<Blob | null>(null);
+  const trackNameTouchedRef = useRef(false);
 
   // Capability check at startup (spec section 5 step 1).
   useEffect(() => {
@@ -149,7 +150,14 @@ export function RenderStudio({
     audioUrlRef.current = file ? URL.createObjectURL(file) : null;
     setAudioUrl(audioUrlRef.current);
     setAudioFile(file);
-    if (file) setTrackName((current) => current || trackNameFromFileName(file.name));
+    // Keep an explicit edit, but never leave the previous track's name on a
+    // newly selected source.
+    if (!file) {
+      trackNameTouchedRef.current = false;
+      setTrackName("");
+    } else if (!trackNameTouchedRef.current) {
+      setTrackName(trackNameFromFileName(file.name));
+    }
   }
 
   // Decode the background once per file and reuse it (memory rule in section 5).
@@ -492,7 +500,10 @@ export function RenderStudio({
               value={trackName}
               disabled={locked}
               placeholder="Midnight Loop"
-              onChange={(event) => setTrackName(event.target.value)}
+              onChange={(event) => {
+                trackNameTouchedRef.current = true;
+                setTrackName(event.target.value);
+              }}
             />
           </Field>
 
