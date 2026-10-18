@@ -79,6 +79,8 @@ async function retryDurable(extra?: UploadHistoryEntry): Promise<boolean> {
 
 export async function readHistory(): Promise<UploadHistoryEntry[]> {
   if (typeof window === "undefined") return [];
+  // A tab that only reads must still hear other tabs' writes.
+  ensureChannel();
   try {
     if (!durable) await retryDurable().catch(() => {});
     return await history().list();

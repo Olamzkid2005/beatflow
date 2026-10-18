@@ -279,7 +279,10 @@ These local repairs do **not** establish the deployed publishing acceptance crit
 
 ## Real M0 acceptance record — still open
 
-Before M1, record all of the following from an owner-authorized production test:
+Before M1, record all of the following from an owner-authorized production test.
+The step-by-step procedure and result template live in
+[`docs/PRODUCTION-RUNBOOK.md`](./PRODUCTION-RUNBOOK.md); the read-only recorder is
+`tools/production-status.mjs`.
 
 - [ ] Production URL and tested date/browser; OAuth callback and consent-screen status.
 - [ ] Nonowner denial and correct intended channel ID/name.

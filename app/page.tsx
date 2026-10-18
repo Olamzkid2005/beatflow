@@ -33,7 +33,7 @@ export default async function Home() {
       <div aria-hidden className="studio-grid pointer-events-none fixed inset-0 -z-10 opacity-60" />
 
       <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-5 py-6 sm:px-8">
-        <Link href="/" className="group flex items-center gap-2.5" aria-label="BeatFlow Studio home">
+        <Link href="/" className="group flex items-center gap-2.5">
           <span className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl border border-primary/30 bg-primary/10">
             <span className="absolute inset-0 bg-linear-to-br from-primary-container/50 via-transparent to-tertiary/20" />
             <Icon name="studio" className="relative h-4 w-4 text-primary" />

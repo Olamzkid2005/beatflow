@@ -25,6 +25,28 @@ const sleep = (ms) => new Promise((resolvePromise) => setTimeout(resolvePromise,
 const PAGE = `<!doctype html><meta charset="utf-8"><title>F06 durability check</title>
 <p id="status">running…</p><script type="module">
 import { createHistory, createIndexedDbBackend } from "/history-store.js";
+import { addHistoryEntry, readHistory } from "/history.js";
+
+// Shared by both tabs in the two-tab replay below.
+window.__historyEvents = 0;
+window.addEventListener("beatflow:history", () => { window.__historyEvents += 1; });
+window.historyAdd = (videoId) => addHistoryEntry(entry(videoId));
+window.historyRead = async () => (await readHistory()).map((row) => row.videoId).sort();
+window.historyEvents = () => window.__historyEvents;
+window.historyResetEvents = () => { window.__historyEvents = 0; };
+window.backend = (name, version) => createIndexedDbBackend(indexedDB, name, "uploads", version);
+window.backendPut = (name, version, videoId) => window.backend(name, version).put(entry(videoId));
+window.openHolder = (name) => new Promise((resolve, reject) => {
+  const request = indexedDB.open(name, 1);
+  request.onupgradeneeded = () => {
+    if (!request.result.objectStoreNames.contains("uploads")) {
+      request.result.createObjectStore("uploads", { keyPath: "videoId" });
+    }
+  };
+  request.onsuccess = () => { window.__holder = request.result; resolve(true); };
+  request.onerror = () => reject(request.error);
+});
+window.closeHolder = () => { window.__holder?.close(); window.__holder = null; return true; };
 
 /**
  * Wraps IndexedDB so a transaction can be aborted in the same tick its
@@ -166,6 +188,17 @@ const server = createServer(async (req, res) => {
       res.end(PAGE);
       return;
     }
+    if (path === "/history.js") {
+      const source = await readFile(join(root, "lib/history.ts"), "utf8");
+      res.setHeader("Content-Type", "text/javascript");
+      res.end(
+        ts.transpileModule(source, {
+          compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+        })
+          .outputText.replaceAll("./history-store", "/history-store.js"),
+      );
+      return;
+    }
     if (path === "/history-store.js") {
       const source = await readFile(join(root, "lib/history-store.ts"), "utf8");
       res.setHeader("Content-Type", "text/javascript");
@@ -256,6 +289,58 @@ try {
     return value.result.value;
   };
 
+  /** Opens an independent tab with its own CDP session. */
+  const openTab = async () => {
+    const response = await fetch(
+      `http://127.0.0.1:${port}/json/new?${encodeURIComponent(origin)}`,
+      { method: "PUT" },
+    );
+    assert(response.ok, `Could not open a second tab (${response.status}).`);
+    const ws = new WebSocket((await response.json()).webSocketDebuggerUrl);
+    const tabPending = new Map();
+    let tabId = 0;
+    ws.addEventListener("message", (event) => {
+      const message = JSON.parse(event.data);
+      if (!message.id || !tabPending.has(message.id)) return;
+      const item = tabPending.get(message.id);
+      tabPending.delete(message.id);
+      if (message.error) item.reject(new Error(JSON.stringify(message.error)));
+      else item.resolve(message.result);
+    });
+    await new Promise((done, reject) => {
+      ws.addEventListener("open", done, { once: true });
+      ws.addEventListener("error", reject, { once: true });
+    });
+    const tabSend = (method, params = {}) =>
+      new Promise((done, reject) => {
+        const id = ++tabId;
+        tabPending.set(id, { resolve: done, reject });
+        ws.send(JSON.stringify({ id, method, params }));
+      });
+    const tabEvaluate = async (expression) => {
+      const value = await tabSend("Runtime.evaluate", {
+        expression,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      if (value.exceptionDetails) {
+        throw new Error(value.exceptionDetails.exception?.description ?? value.exceptionDetails.text);
+      }
+      return value.result.value;
+    };
+    await tabSend("Runtime.enable");
+    let tabReady = false;
+    for (let i = 0; i < 100; i++) {
+      if (await tabEvaluate("window.ready === true")) {
+        tabReady = true;
+        break;
+      }
+      await sleep(100);
+    }
+    assert(tabReady, "Second tab did not load the check page.");
+    return { evaluate: tabEvaluate, close: () => ws.close() };
+  };
+
   await send("Runtime.enable");
   let ready = false;
   for (let i = 0; i < 100; i++) {
@@ -274,12 +359,89 @@ try {
   }
   assert.deepEqual(pageErrors, [], "page raised an exception");
 
+  // --- Real two-tab replay -------------------------------------------------
+  const tabB = await openTab();
+
+  // A raw holder in tab A has no onversionchange, so tab B's upgrade blocks.
+  const blockedName = `beatflow-two-blocked-${crypto.randomUUID()}`;
+  assert.equal(await evaluate(`window.openHolder(${JSON.stringify(blockedName)})`), true);
+  const blockedOutcome = await tabB.evaluate(`Promise.race([
+    window.backend(${JSON.stringify(blockedName)}, 2).list()
+      .then(() => "opened")
+      .catch((error) => "rejected:" + String(error?.message ?? error)),
+    new Promise((resolve) => setTimeout(() => resolve("timeout"), 20000)),
+  ])`);
+  assert.match(blockedOutcome, /^rejected:.*blocked by another tab/i);
+  await evaluate("window.closeHolder()");
+  let afterUnblock = { ok: false };
+  for (let i = 0; i < 100; i++) {
+    afterUnblock = await tabB.evaluate(`window.backend(${JSON.stringify(blockedName)}, 2).list()
+      .then((rows) => ({ ok: true, rows }))
+      .catch(() => ({ ok: false }))`);
+    if (afterUnblock.ok) break;
+    await sleep(100);
+  }
+  assert.equal(afterUnblock.ok, true, "the upgrade did not complete after the holder closed");
+  assert.equal(afterUnblock.rows.length, 0);
+
+  // Both tabs start listening; a write in one must wake the other.
+  assert.deepEqual(await evaluate("window.historyRead()"), []);
+  assert.deepEqual(await tabB.evaluate("window.historyRead()"), []);
+  await tabB.evaluate("window.historyResetEvents()");
+  assert.equal(await evaluate(`window.historyAdd("broadcast-a")`), true);
+  let heard = 0;
+  for (let i = 0; i < 100; i++) {
+    heard = await tabB.evaluate("window.historyEvents()");
+    if (heard > 0) break;
+    await sleep(50);
+  }
+  assert(heard > 0, "the reading tab did not hear the broadcast");
+  assert.deepEqual(await tabB.evaluate("window.historyRead()"), ["broadcast-a"]);
+
+  await evaluate("window.historyResetEvents()");
+  assert.equal(await tabB.evaluate(`window.historyAdd("broadcast-b")`), true);
+  heard = 0;
+  for (let i = 0; i < 100; i++) {
+    heard = await evaluate("window.historyEvents()");
+    if (heard > 0) break;
+    await sleep(50);
+  }
+  assert(heard > 0, "the writing tab's peer did not hear the broadcast");
+  assert.deepEqual(await evaluate("window.historyRead()"), ["broadcast-a", "broadcast-b"]);
+
+  // Tab B upgrades the schema. Tab A's connection must close and reopen at v2.
+  assert.equal(
+    await tabB.evaluate(`window.backend("beatflow", 2).list().then((rows) => rows.length)`),
+    2,
+  );
+  assert.deepEqual(
+    await evaluate("window.historyRead()"),
+    ["broadcast-a", "broadcast-b"],
+    "the older tab did not reopen after the other tab upgraded the schema",
+  );
+  await tabB.evaluate(`window.backendPut("beatflow", 2, "after-upgrade")`);
+  assert.deepEqual(await evaluate("window.historyRead()"), [
+    "after-upgrade",
+    "broadcast-a",
+    "broadcast-b",
+  ]);
+  assert.equal(await evaluate(`window.historyAdd("after-upgrade-2")`), true);
+  assert.deepEqual(
+    await tabB.evaluate(
+      `window.backend("beatflow", 2).list().then((rows) => rows.map((row) => row.videoId).sort())`,
+    ),
+    ["after-upgrade", "after-upgrade-2", "broadcast-a", "broadcast-b"],
+  );
+  tabB.close();
+
   const browser = await send("Browser.getVersion");
   console.log(
     `F06/F05 PASS — ${browser.product}\n` +
       `  aborted put/clear/remove rejected with nothing committed\n` +
       `  committed write survived reopen\n` +
       `  failed migration kept the legacy copy and retried once\n` +
+      `  two tabs: blocked upgrade rejected, then completed after the holder closed\n` +
+      `  two tabs: broadcast refreshed the reading tab; a later schema upgrade reopened the old tab\n` +
       `  abort did not throw; test database ${result.checks.dbName}`,
   );
 } catch (error) {

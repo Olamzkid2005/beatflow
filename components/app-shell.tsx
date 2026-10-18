@@ -28,7 +28,7 @@ export function AppShell({ user, children }: { user: AppShellUser; children: Rea
       <header className="fixed inset-x-0 top-0 z-50 h-14 border-b border-surface-container-highest bg-surface-container-low/95 backdrop-blur">
         <div className="flex h-full items-center justify-between gap-4 px-4 lg:px-7">
           <div className="flex min-w-0 items-center gap-2.5">
-            <Link href="/generate" className="group flex items-center gap-2.5" aria-label="BeatFlow Studio home">
+            <Link href="/generate" className="group flex items-center gap-2.5">
               <span className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-xl border border-primary/30 bg-primary/10">
                 <span className="absolute inset-0 bg-linear-to-br from-primary-container/50 via-transparent to-tertiary/20" />
                 <Icon name="studio" className="relative h-4 w-4 text-primary" />

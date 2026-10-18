@@ -2,7 +2,9 @@
   "name": "beatflow",
   "version": "0.1.0",
   "private": true,
-  "engines": { "node": ">=24.7.0" },
+  "engines": {
+    "node": ">=24.7.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -13,6 +15,8 @@
     "idb:check": "node tools/idb-durability-check.mjs",
     "text:check": "node tools/text-fit-check.mjs",
     "fps:check": "node tools/fps-readback-check.mjs",
+    "a11y:check": "node tools/a11y-check.mjs",
+    "memory:check": "node tools/memory-check.mjs",
     "upload:check": "node tools/f03-upload-check.mjs"
   },
   "dependencies": {
@@ -28,6 +32,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "axe-core": "^4.14.0",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
     "tailwindcss": "^4",

@@ -58,7 +58,9 @@ it asks first — and the tab warns before closing or reloading while a render o
 running. A render and upload are rejected before decoding when a photo exceeds 32 MP or
 audio exceeds 64 MiB / 15 minutes; large photos are downscaled during decode. The upload
 lifecycle lives in `lib/use-upload-job.ts`, and the form's hints/errors are linked with
-`aria-describedby`. Still to review on a real device; a full WCAG audit is not done.
+`aria-describedby`. A real 5-minute beat rendered at **1042 MiB peak renderer memory** on
+an 8 GB 2013 MacBook Air (1536 MiB budget), with +2 MiB retained across five render/discard
+cycles. Automated WCAG A/AA passes with no violations; a screen-reader pass is still open.
 
 **M2 — template engine (in progress).** Templates are data, validated by zod v1 before
 anything renders: `First Light` (lower third), `Pulse` (centred title) and `Grid`
@@ -94,6 +96,17 @@ https://<production-domain>/api/auth/callback/google
 npm install
 npm test
 npm run dev
+```
+
+Local checks that need Chrome and a production build:
+
+```bash
+npm run build
+npm run a11y:check    # axe WCAG A/AA + keyboard traversal
+npm run memory:check  # 30 s, 3 min, 5 min renders + five cycles
+npm run idb:check     # durability, migration, and a real two-tab replay
+npm run fps:check     # 30 fps encode/readback and abort
+npm run upload:check  # production-browser upload and guard flow
 ```
 
 Use Node **24.7+** (CI uses Node 24); native tests load real TypeScript sources using

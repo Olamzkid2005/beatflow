@@ -166,28 +166,47 @@ export function createIndexedDbBackend(
   factory: IDBFactory | undefined = globalThis.indexedDB,
   dbName = "beatflow",
   storeName = "uploads",
+  version = 1,
 ): HistoryBackend {
   if (!factory) throw new Error("IndexedDB is unavailable in this browser.");
   let dbPromise: Promise<IDBDatabase> | null = null;
+  // After another tab upgrades the schema, reopening at the old pinned version
+  // would throw VersionError. Once that happens, open the current version.
+  let upgradeSeen = false;
 
   function open(): Promise<IDBDatabase> {
     if (dbPromise) return dbPromise;
     const attempt = new Promise<IDBDatabase>((resolve, reject) => {
-      const request = factory.open(dbName, 1);
+      const request = upgradeSeen ? factory.open(dbName) : factory.open(dbName, version);
+      let blocked = false;
       request.onupgradeneeded = () => {
         const db = request.result;
         if (!db.objectStoreNames.contains(storeName)) {
           db.createObjectStore(storeName, { keyPath: "videoId" });
         }
       };
-      request.onblocked = () =>
+      request.onblocked = () => {
+        blocked = true;
         reject(new Error("The history database upgrade is blocked by another tab."));
+      };
       request.onsuccess = () => {
         const db = request.result;
-        // Let another tab upgrade: close now and reopen lazily on the next call.
+        // A blocked request can still open after the other tab lets go; it was
+        // already reported as failed, so close it instead of leaking a holder.
+        if (blocked) {
+          db.close();
+          return;
+        }
+        if (!db.objectStoreNames.contains(storeName)) {
+          db.close();
+          reject(new Error(`The history database is missing its "${storeName}" store.`));
+          return;
+        }
+        // Let another tab upgrade: close now and reopen lazily at its version.
         db.onversionchange = () => {
           db.close();
           dbPromise = null;
+          upgradeSeen = true;
         };
         resolve(db);
       };

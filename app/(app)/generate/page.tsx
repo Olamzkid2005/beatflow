@@ -156,6 +156,7 @@ function UploadStudio() {
     cancelUpload,
   } = useUploadJob();
   const titleTouchedRef = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -291,6 +292,7 @@ function UploadStudio() {
           <Card className="overflow-hidden">
             <div className="relative">
               <input
+                ref={fileInputRef}
                 id="video-file"
                 type="file"
                 accept="video/mp4"
@@ -374,17 +376,14 @@ function UploadStudio() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <label
-                  htmlFor="video-file"
-                  className={buttonClass({
-                    variant: "secondary",
-                    size: "sm",
-                    className: "peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40",
-                  })}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className={buttonClass({ variant: "secondary", size: "sm" })}
                 >
                   <Icon name="folder" className="h-3.5 w-3.5" />
                   {file ? "Replace MP4" : "Choose MP4"}
-                </label>
+                </button>
                 <a
                   href="/beatflow-m0-test-5s.mp4"
                   download="beatflow-m0-test-5s.mp4"
