@@ -2,7 +2,21 @@
 
 import { useEffect } from "react";
 
-import { canNavigate } from "@/lib/navigation-guard";
+import {
+  canNavigate,
+  isNavigationBlocked,
+  subscribeNavigationGuards,
+} from "@/lib/navigation-guard";
+
+const TRAP_KEY = "__beatflowBlocked";
+
+function isTrap(state: unknown): boolean {
+  return Boolean(
+    state &&
+      typeof state === "object" &&
+      (state as Record<string, unknown>)[TRAP_KEY] === true,
+  );
+}
 
 /**
  * Capture-phase internal link guard. It runs before Next's Link handler, so a
@@ -49,6 +63,57 @@ export function NavigationGuard() {
     };
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
+  }, []);
+
+  // App Router has no supported back-navigation hook, so an active job pushes a
+  // same-URL entry. Back then lands on an identical entry, which lets us ask
+  // before the router reaches a different route. Declining steps forward again;
+  // accepting steps past the duplicate so one back press still leaves.
+  useEffect(() => {
+    let trapped = false;
+
+    const arm = () => {
+      if (trapped || !isNavigationBlocked()) return;
+      window.history.pushState(
+        { ...(window.history.state ?? {}), [TRAP_KEY]: true },
+        "",
+        window.location.href,
+      );
+      trapped = true;
+    };
+
+    const onPopState = () => {
+      if (!trapped) {
+        if (isNavigationBlocked() && isTrap(window.history.state)) trapped = true;
+        return;
+      }
+      trapped = false;
+      if (!isNavigationBlocked()) return;
+      if (canNavigate((message) => window.confirm(message))) {
+        window.history.back();
+        return;
+      }
+      window.history.forward();
+    };
+
+    // Once work ends, step off the duplicate so one back press still reaches
+    // the previous page instead of an inert same-URL entry.
+    const disarm = () => {
+      if (!trapped || isNavigationBlocked() || !isTrap(window.history.state)) return;
+      trapped = false;
+      window.history.back();
+    };
+
+    window.addEventListener("popstate", onPopState);
+    const unsubscribe = subscribeNavigationGuards(() => {
+      arm();
+      disarm();
+    });
+    arm();
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+      unsubscribe();
+    };
   }, []);
 
   return null;
