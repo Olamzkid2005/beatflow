@@ -441,3 +441,24 @@ Migration now reads the legacy rows, skips IDs already present, writes the rest 
 - `tests/history.test.mjs`: failed write rejects, legacy remains and nothing is committed; retry copies both rows exactly once. Existing-store migration now merges instead of silently dropping legacy rows, and does not overwrite a newer stored row. History file: **11/11 passed**.
 - `npm run idb:check` real Chrome: the migration's write is aborted after request success, `legacy.clear()` is not called, then the same controller retries successfully and clears exactly once.
 - **Changed decision:** migration into a non-empty store now merges legacy entries rather than treating the store as authoritative and discarding the old copy. This follows the finding's requirement to decide explicitly instead of dropping data.
+
+### F08/F09 — Render boundary validation and snapshot — **PASS for rejection/snapshot; media readback NOT RUN**, 18 October 2026
+
+- New `lib/renderer/validate.ts` rejects nonfinite/nonpositive FPS outside 1–60, rejects odd/non-whole/oversized export dimensions, and deep-parses the template plus copies variables before any canvas or decoder allocation. `encodeMp4()` validates FPS and canvas dimensions independently of `renderVideo()`. Capability probing now uses the selected frame rate.
+- Template/canvas/layer/shadow/outline objects are strict: unknown fields reject instead of being silently stripped by Zod.
+- Tests: invalid FPS values and odd dimensions throw; mutation of the caller's template/vars after snapshot cannot change it; unknown fields reject. Full suite below.
+- **Not yet verified:** a real 30 fps downloaded MP4 with nonzero video and audio tracks at the selected rate. The existing media probe is still the 1 fps baseline. This entry does not claim F08's output-track acceptance is closed.
+
+### F07 — Text fits measured bounds with real fonts — **PASS**, 18 October 2026
+
+- Text layers now support `maxHeight` and `lineHeight`; fitting checks both width and reserved height, clips line count by height, ellipsizes inside both, and throws when even one line cannot fit rather than drawing outside the box. Built-in titles/branding declare non-overlapping reserved heights before the frame edge.
+- `tests/renderer.test.mjs` checks every preset for width, line count, `lines × lineHeight <= maxHeight`, frame bounds and title/brand separation.
+- `npm run text:check` (Chrome 155.0.8059.80, shipped Inter/JetBrains Mono via `FontFace` + real `measureText`): **15/15 layouts** for long, unbroken and accented titles plus long/missing branding across all three presets fit both axes. Tightest: Pulse title 190/190 px tall and 1186/1360 px wide; Grid brand 52/60 px tall. A 10 px box rejects.
+- The harness initially measured with unloaded family names and fell back to system fonts; that produced false failures. It now measures with the loaded faces. Automated bounds are not a full visual-design review.
+
+### F02/F03 — Artifact ownership and internal navigation — **PASS for pure lifecycle logic; full in-flight UI replay NOT RUN**, 18 October 2026
+
+- New `lib/artifact-ownership.ts` gives one selection owner. Rendered files carry an artifact ID; discarding/replacing that render clears only a matching upload selection, never a manually chosen file. Render controls, template/audio/image inputs and handoff/discard lock during an upload.
+- New `lib/navigation-guard.ts` + app-shell `NavigationGuard` intercept internal anchor clicks in the capture phase and ask before leaving while a render or upload is active. `useNavigationGuard` registers in `RenderStudio` (render) and the upload page (upload).
+- Tests: manual vs rendered ownership, nonmatching release, replacement identity, upload lock, declined/accepted prompts, guard release and reason ordering.
+- **Not yet verified:** a full production-Chrome replay of render → handoff → held upload → second render/discard, and browser **back-button** interception. Next's client router processes `popstate`; link-click protection alone does not cover it. Both remain explicit gaps.

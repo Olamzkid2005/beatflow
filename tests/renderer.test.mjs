@@ -9,6 +9,11 @@ import {
   parseTemplate,
   templateSchema,
 } from "../lib/renderer/template-schema.ts";
+import {
+  assertExportCanvas,
+  normalizeFps,
+  snapshotRenderInput,
+} from "../lib/renderer/validate.ts";
 
 /** Deterministic stand-in for canvas measureText: 0.55 em per character. */
 function measure(text, font) {
@@ -53,34 +58,6 @@ test("every preset parses, is named uniquely, and binds only known variables", (
     }
   }
   assert.equal(TEMPLATE_PRESETS[0].id, DEFAULT_TEMPLATE_ID);
-});
-
-test("a very long title fits every preset's title layer", () => {
-  const title =
-    "Midnight Loop (Extended Visualizer Version Featuring A Guest Verse And A Very Long Name That Keeps Going)";
-  for (const preset of TEMPLATE_PRESETS) {
-    const titles = textLayers(preset.template).filter((layer) => layer.value.includes("{{track_name}}"));
-    assert.ok(titles.length > 0, `${preset.template.name} has no title layer`);
-    for (const layer of titles) {
-      const family = layer.fontFamily;
-      const layout = layoutText({
-        text: title,
-        fontSize: layer.fontSize,
-        minFontSize: layer.minFontSize,
-        maxWidth: layer.maxWidth,
-        weight: layer.fontWeight,
-        family,
-        letterSpacing: layer.letterSpacing,
-        measure,
-      });
-      assert.ok(layout.lines.length <= MAX_TEXT_LINES, preset.template.name);
-      assert.ok(layout.fontSize >= layer.minFontSize, preset.template.name);
-      for (const line of layout.lines) {
-        const width = textWidth(line, `${layer.fontWeight} ${layout.fontSize}px ${family}`, layer.letterSpacing);
-        assert.ok(width <= layer.maxWidth, `${preset.template.name}: "${line}" is ${width}px wide`);
-      }
-    }
-  }
 });
 
 test("first-light preset validates against schema v1", () => {
@@ -166,4 +143,138 @@ test("an unbreakable long word truncates with an ellipsis at the floor", () => {
   assert.equal(layout.fontSize, 40);
   assert.ok(layout.lines[0].endsWith("…"));
   assert.ok(measure(layout.lines[0], "700 40px Inter") <= 400);
+});
+
+test("a very long title fits every preset's title layer width and height", () => {
+  const title =
+    "Midnight Loop (Extended Visualizer Version Featuring A Guest Verse And A Very Long Name That Keeps Going)";
+  for (const preset of TEMPLATE_PRESETS) {
+    const titles = textLayers(preset.template).filter((layer) => layer.value.includes("{{track_name}}"));
+    assert.ok(titles.length > 0, `${preset.template.name} has no title layer`);
+    for (const layer of titles) {
+      const family = layer.fontFamily;
+      const layout = layoutText({
+        text: title,
+        fontSize: layer.fontSize,
+        minFontSize: layer.minFontSize,
+        maxWidth: layer.maxWidth,
+        weight: layer.fontWeight,
+        family,
+        letterSpacing: layer.letterSpacing,
+        maxHeight: layer.maxHeight,
+        lineHeight: layer.lineHeight,
+        measure,
+      });
+      assert.ok(layout.lines.length <= MAX_TEXT_LINES, preset.template.name);
+      assert.ok(layout.fontSize >= layer.minFontSize, preset.template.name);
+      assert.ok(
+        layer.maxHeight === undefined || layout.lines.length * layout.lineHeight <= layer.maxHeight,
+        `${preset.template.name}: ${layout.lines.length} lines exceed ${layer.maxHeight}px`,
+      );
+      for (const line of layout.lines) {
+        const width = textWidth(line, `${layer.fontWeight} ${layout.fontSize}px ${family}`, layer.letterSpacing);
+        assert.ok(width <= layer.maxWidth, `${preset.template.name}: "${line}" is ${width}px wide`);
+      }
+    }
+  }
+});
+
+test("every text layer reserves vertical space so it cannot clip or collide", () => {
+  for (const preset of TEMPLATE_PRESETS) {
+    for (const layer of textLayers(preset.template)) {
+      if (!layer.value.includes("{{track_name}}") && !layer.value.includes("{{producer_name}}")) {
+        continue;
+      }
+      assert.ok(
+        layer.maxHeight !== undefined && layer.maxHeight > 0,
+        `${preset.template.name} text layer at y=${layer.y} needs maxHeight`,
+      );
+      assert.ok(
+        layer.y + layer.maxHeight <= preset.template.canvas.height,
+        `${preset.template.name} reserves space past the frame`,
+      );
+    }
+    const titles = textLayers(preset.template).filter((layer) => layer.value.includes("{{track_name}}"));
+    const brands = textLayers(preset.template).filter((layer) => layer.value.includes("{{producer_name}}"));
+    for (const title of titles) {
+      for (const brand of brands) {
+        assert.ok(
+          title.y + title.maxHeight <= brand.y || brand.y + brand.maxHeight <= title.y,
+          `${preset.template.name}: title and branding boxes overlap`,
+        );
+      }
+    }
+  }
+});
+
+test("a text box too short for one line fails instead of drawing outside it", () => {
+  assert.throws(
+    () =>
+      layoutText({
+        text: "Midnight",
+        fontSize: 100,
+        minFontSize: 40,
+        maxWidth: 1200,
+        weight: 700,
+        family: "Inter",
+        maxHeight: 30,
+        measure,
+      }),
+    /at least 44px/,
+  );
+});
+
+test("FPS is validated before any render work", () => {
+  for (const value of [0, -1, NaN, Infinity, -Infinity, "30", null, undefined, 0.5, 61]) {
+    assert.throws(() => normalizeFps(value), RangeError, `accepted ${String(value)}`);
+  }
+  assert.equal(normalizeFps(1), 1);
+  assert.equal(normalizeFps(30), 30);
+  assert.equal(normalizeFps(60), 60);
+});
+
+test("the export boundary rejects odd or invalid dimensions", () => {
+  assert.doesNotThrow(() => assertExportCanvas({ width: 1920, height: 1080 }));
+  for (const canvas of [
+    { width: 1919, height: 1080 },
+    { width: 1920, height: 1079 },
+    { width: 0, height: 1080 },
+    { width: 1920.5, height: 1080 },
+    { width: 4098, height: 1080 },
+  ]) {
+    assert.throws(() => assertExportCanvas(canvas), RangeError, `accepted ${JSON.stringify(canvas)}`);
+  }
+});
+
+test("the render snapshot detaches templates and variables", () => {
+  const template = structuredClone(FIRST_LIGHT_TEMPLATE);
+  const vars = { track_name: "Original", producer_name: "Nova" };
+  const snapshot = snapshotRenderInput({ template, vars });
+
+  template.layers.find((layer) => layer.type === "text").value = "Mutated";
+  vars.track_name = "Mutated";
+  snapshot.vars.producer_name = "Changed only in the snapshot";
+
+  assert.equal(
+    snapshot.template.layers.find((layer) => layer.type === "text").value,
+    "{{track_name}}",
+  );
+  assert.equal(snapshot.vars.track_name, "Original");
+  assert.equal(vars.producer_name, "Nova");
+  assert.equal(
+    snapshot.template.layers.find((layer) => layer.type === "text" && layer.value.includes("track_name")).value,
+    "{{track_name}}",
+  );
+});
+
+test("unknown render input fields are rejected rather than stripped", () => {
+  const base = structuredClone(FIRST_LIGHT_TEMPLATE);
+  assert.equal(templateSchema.safeParse({ ...base, unexpected: true }).success, false);
+  assert.equal(
+    templateSchema.safeParse({
+      ...base,
+      layers: [{ ...base.layers[3], surprise: 1 }],
+    }).success,
+    false,
+  );
 });

@@ -1,5 +1,7 @@
 import { canEncodeAudio, canEncodeVideo, Quality } from "mediabunny";
 
+import { normalizeFps } from "./validate";
+
 /**
  * Required output format (spec section 5). The pinned codec string is
  * deliberate: Mediabunny's automatic level selection was wrong for 1080p in
@@ -26,8 +28,15 @@ export type RenderCapabilities = {
   reasons: string[];
 };
 
-/** Feature-checks the browser before a render starts, with readable reasons. */
-export async function checkRenderCapabilities(): Promise<RenderCapabilities> {
+/**
+ * Feature-checks the browser before a render starts, with readable reasons.
+ * The probe uses the selected frame rate, so 30 fps is not certified by a
+ * successful 1 fps check.
+ */
+export async function checkRenderCapabilities(
+  options: { fps?: number } = {},
+): Promise<RenderCapabilities> {
+  const fps = normalizeFps(options.fps ?? 1);
   const reasons: string[] = [];
 
   if (typeof VideoEncoder === "undefined" || typeof AudioEncoder === "undefined") {
@@ -46,7 +55,7 @@ export async function checkRenderCapabilities(): Promise<RenderCapabilities> {
     video = await canEncodeVideo("avc", {
       width: RENDER_VIDEO.width,
       height: RENDER_VIDEO.height,
-      frameRate: 1,
+      frameRate: fps,
       quality: new Quality({ bitrate: RENDER_VIDEO.bitrate }),
       fullCodecString: RENDER_VIDEO.fullCodecString,
     }).catch(() => false);

@@ -19,11 +19,18 @@ import {
   Textarea,
 } from "@/components/ui/primitives";
 import { TagInput } from "@/components/ui/tag-input";
+import {
+  adoptArtifact,
+  chooseFile,
+  releaseArtifact,
+  type UploadSelection,
+} from "@/lib/artifact-ownership";
 import { addHistoryEntry } from "@/lib/history";
 import { readSettings } from "@/lib/settings";
 import { useBeforeUnloadWarning } from "@/lib/use-before-unload";
 import { browserTimeZone, toDateTimeLocalValue, toUtcIso8601 } from "@/lib/time";
 import { useChannel } from "@/lib/use-channel";
+import { useNavigationGuard } from "@/lib/use-navigation-guard";
 import {
   CHUNK_ALIGNMENT,
   DEFAULT_CHUNK_SIZE,
@@ -125,7 +132,8 @@ function UploadStudio() {
       return browserTimeZone();
     }
   });
-  const [file, setFile] = useState<File | null>(null);
+  const [selection, setSelection] = useState<UploadSelection | null>(null);
+  const file = selection?.file ?? null;
   const [chunkSize, setChunkSize] = useState(DEFAULT_CHUNK_SIZE);
   const [dragging, setDragging] = useState(false);
 
@@ -147,6 +155,10 @@ function UploadStudio() {
 
   // The tab must stay open until YouTube has the file (spec section 7).
   useBeforeUnloadWarning(busy);
+  useNavigationGuard(
+    busy,
+    "An upload is still in progress. Leaving this page can lose the transfer progress. Leave anyway?",
+  );
 
   async function startUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -352,7 +364,16 @@ function UploadStudio() {
         </div>
       </header>
 
-      <RenderStudio producerName={defaults.producerName} onRenderedFile={setFile} />
+      <RenderStudio
+        producerName={defaults.producerName}
+        uploading={busy}
+        onRenderedFile={(rendered, artifactId) =>
+          setSelection(adoptArtifact(rendered, artifactId))
+        }
+        onReleaseArtifact={(artifactId) =>
+          setSelection((current) => releaseArtifact(current, artifactId))
+        }
+      />
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="flex min-w-0 flex-col gap-5">
@@ -413,7 +434,7 @@ function UploadStudio() {
                 type="file"
                 accept="video/mp4"
                 disabled={busy}
-                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                onChange={(event) => setSelection(chooseFile(event.target.files?.[0] ?? null))}
                 className="peer sr-only"
               />
               <label
@@ -428,7 +449,7 @@ function UploadStudio() {
                   setDragging(false);
                   if (busy) return;
                   const dropped = event.dataTransfer.files?.[0];
-                  if (dropped) setFile(dropped);
+                  if (dropped) setSelection(chooseFile(dropped));
                 }}
                 className={cn(
                   "group relative flex aspect-video cursor-pointer flex-col items-center justify-center overflow-hidden border-b border-surface-container-highest bg-surface-container-lowest text-center outline-none transition focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50",

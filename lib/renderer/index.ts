@@ -9,9 +9,18 @@ import { checkRenderCapabilities } from "./capabilities";
 import { encodeMp4 } from "./encode";
 import { drawScene, type DrawingContext, type SceneAssets } from "./scene";
 import type { RenderVariables, Template } from "./template-schema";
+import { normalizeFps, snapshotRenderInput } from "./validate";
 
 export * from "./template-schema";
 export { checkRenderCapabilities, RENDER_AUDIO, RENDER_VIDEO, type RenderCapabilities } from "./capabilities";
+export {
+  assertExportCanvas,
+  MAX_FPS,
+  MIN_FPS,
+  normalizeFps,
+  snapshotRenderInput,
+  type RenderSnapshot,
+} from "./validate";
 export { decodeAudioFile, MAX_AUDIO_SECONDS, type DecodedAudio } from "./audio";
 export {
   decodeImageFile,
@@ -72,13 +81,19 @@ export async function renderVideo(
   const { signal, onProgress } = options;
   signal?.throwIfAborted();
 
+  // Validate and detach before allocating a canvas or decoding media. The job
+  // then uses this snapshot for its whole lifetime.
+  const fps = normalizeFps(options.fps ?? DEFAULT_FPS);
+  const snapshot = snapshotRenderInput(input);
+  const template = snapshot.template;
+
   onProgress?.({ stage: "capabilities", pct: 0 });
-  const capabilities = await checkRenderCapabilities();
+  const capabilities = await checkRenderCapabilities({ fps });
   if (!capabilities.supported) throw new RenderError(capabilities.reasons.join(" "));
   onProgress?.({ stage: "capabilities", pct: 1 });
   signal?.throwIfAborted();
 
-  const { width, height } = input.template.canvas;
+  const { width, height } = template.canvas;
   const canvas = new OffscreenCanvas(width, height);
   const context = canvas.getContext("2d", { alpha: false });
   if (!context) throw new RenderError("Could not create the render canvas.");
@@ -91,17 +106,17 @@ export async function renderVideo(
     onProgress?.({ stage: "decode", pct: 1 });
 
     onProgress?.({ stage: "assets", pct: 0 });
-    await ensureTemplateFonts(input.template);
-    assets = await loadTemplateAssets(input.template, { background: input.background });
+    await ensureTemplateFonts(template);
+    assets = await loadTemplateAssets(template, { background: input.background });
     signal?.throwIfAborted();
     onProgress?.({ stage: "assets", pct: 1 });
 
-    drawScene(context, input.template, input.vars, assets);
+    drawScene(context, template, snapshot.vars, assets);
 
     return await encodeMp4({
       canvas,
       audio: audio.buffer,
-      fps: options.fps ?? DEFAULT_FPS,
+      fps,
       signal,
       onProgress: (stage, pct) => onProgress?.({ stage, pct }),
     });

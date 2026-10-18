@@ -15,7 +15,8 @@ const hexColor = z
   .string()
   .regex(/^#[0-9a-fA-F]{6}$/, "Colors must be six-digit hex, for example #cabeff.");
 
-const imageLayerSchema = z.object({
+const imageLayerSchema = z
+  .object({
   type: z.literal("image"),
   binding: z.enum(["background_image", "logo"]),
   fit: z.enum(["cover", "contain"]).default("cover"),
@@ -23,9 +24,11 @@ const imageLayerSchema = z.object({
   offsetX: z.number().min(-1).max(1).default(0),
   offsetY: z.number().min(-1).max(1).default(0),
   opacity: z.number().min(0).max(1).default(1),
-});
+  })
+  .strict();
 
-const rectLayerSchema = z.object({
+const rectLayerSchema = z
+  .object({
   type: z.literal("rect"),
   x: z.number(),
   y: z.number(),
@@ -34,9 +37,11 @@ const rectLayerSchema = z.object({
   fill: hexColor,
   opacity: z.number().min(0).max(1).default(1),
   radius: z.number().min(0).default(0),
-});
+  })
+  .strict();
 
-const textLayerSchema = z.object({
+const textLayerSchema = z
+  .object({
   type: z.literal("text"),
   value: z.string().max(2000),
   x: z.number(),
@@ -46,6 +51,10 @@ const textLayerSchema = z.object({
   fontWeight: z.number().int().min(100).max(900).default(700),
   fontSize: z.number().positive(),
   minFontSize: z.number().positive().default(28),
+  /** Reserve vertical space so lines cannot run into other layers. */
+  maxHeight: z.number().positive().max(4096).optional(),
+  /** Line height as a multiple of the font size. */
+  lineHeight: z.number().min(1).max(2).default(1.1),
   color: hexColor,
   align: z.enum(["left", "center", "right"]).default("left"),
   uppercase: z.boolean().default(false),
@@ -57,14 +66,17 @@ const textLayerSchema = z.object({
       offsetX: z.number(),
       offsetY: z.number(),
     })
+    .strict()
     .nullish(),
   outline: z
     .object({
       color: hexColor,
       width: z.number().positive(),
     })
+    .strict()
     .nullish(),
-});
+  })
+  .strict();
 
 export const templateLayerSchema = z.discriminatedUnion("type", [
   imageLayerSchema,
@@ -72,16 +84,20 @@ export const templateLayerSchema = z.discriminatedUnion("type", [
   textLayerSchema,
 ]);
 
-export const templateSchema = z.object({
-  schemaVersion: z.literal(TEMPLATE_SCHEMA_VERSION),
-  name: z.string().min(1).max(80),
-  canvas: z.object({
-    width: z.number().int().positive().max(4096),
-    height: z.number().int().positive().max(4096),
-    backgroundColor: hexColor,
-  }),
-  layers: z.array(templateLayerSchema).max(30),
-});
+export const templateSchema = z
+  .object({
+    schemaVersion: z.literal(TEMPLATE_SCHEMA_VERSION),
+    name: z.string().min(1).max(80),
+    canvas: z
+      .object({
+        width: z.number().int().positive().max(4096),
+        height: z.number().int().positive().max(4096),
+        backgroundColor: hexColor,
+      })
+      .strict(),
+    layers: z.array(templateLayerSchema).max(30),
+  })
+  .strict();
 
 export type Template = z.infer<typeof templateSchema>;
 export type TemplateLayer = z.infer<typeof templateLayerSchema>;

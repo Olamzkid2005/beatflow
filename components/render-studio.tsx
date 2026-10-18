@@ -17,6 +17,7 @@ import {
 import type { RenderCapabilities, RenderProgress } from "@/lib/renderer";
 import { DEFAULT_TEMPLATE_ID, TEMPLATE_PRESETS } from "@/lib/templates";
 import { useBeforeUnloadWarning } from "@/lib/use-before-unload";
+import { useNavigationGuard } from "@/lib/use-navigation-guard";
 
 type Phase = "idle" | "rendering" | "done" | "cancelled" | "error";
 
@@ -24,6 +25,8 @@ type RenderResult = {
   url: string;
   bytes: number;
   name: string;
+  /** Identifies the render that owns the upload handoff. */
+  artifactId: string;
 };
 
 function trackNameFromFileName(name: string): string {
@@ -62,10 +65,14 @@ function stageLabel(stage: RenderProgress["stage"]): string {
 
 export function RenderStudio({
   producerName,
+  uploading,
   onRenderedFile,
+  onReleaseArtifact,
 }: {
   producerName: string;
-  onRenderedFile: (file: File) => void;
+  uploading: boolean;
+  onRenderedFile: (file: File, artifactId: string) => void;
+  onReleaseArtifact: (artifactId: string) => void;
 }) {
   const [presetId, setPresetId] = useState(DEFAULT_TEMPLATE_ID);
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -196,9 +203,11 @@ export function RenderStudio({
 
   /** Releases the rendered MP4 without touching anything the user downloaded. */
   function handleDiscard() {
+    if (uploading) return;
     if (!window.confirm("Discard this render? The file is released from memory; a downloaded copy is untouched.")) {
       return;
     }
+    if (result) onReleaseArtifact(result.artifactId);
     if (resultUrlRef.current) URL.revokeObjectURL(resultUrlRef.current);
     resultUrlRef.current = null;
     resultBlobRef.current = null;
@@ -207,7 +216,7 @@ export function RenderStudio({
   }
 
   async function handleRender() {
-    if (!audioFile || !imageFile || phase === "rendering") return;
+    if (uploading || !audioFile || !imageFile || phase === "rendering") return;
     if (capabilities && !capabilities.supported) {
       setError(capabilities.reasons.join(" "));
       return;
@@ -215,6 +224,9 @@ export function RenderStudio({
     if (imageError) return;
     // Hold on to a finished render until the user agrees to replace it.
     if (result && !window.confirm("Start a new render and release the current MP4?")) return;
+
+    // The parent's upload selection must not outlive the render it came from.
+    if (result) onReleaseArtifact(result.artifactId);
 
     // A new render releases the previous Blob and URL (spec section 5 cleanup).
     if (resultUrlRef.current) URL.revokeObjectURL(resultUrlRef.current);
@@ -253,6 +265,7 @@ export function RenderStudio({
         url,
         bytes: blob.size,
         name: `${resolvedName.replace(/[^\w -]+/g, "").trim() || "beatflow-render"}.mp4`,
+        artifactId: crypto.randomUUID(),
       });
       setProgress(null);
       setPhase("done");
@@ -271,13 +284,18 @@ export function RenderStudio({
 
   function handleUseForUpload() {
     const blob = resultBlobRef.current;
-    if (!blob || !result) return;
-    onRenderedFile(new File([blob], result.name, { type: "video/mp4" }));
+    if (uploading || !blob || !result) return;
+    onRenderedFile(new File([blob], result.name, { type: "video/mp4" }), result.artifactId);
   }
 
   const rendering = phase === "rendering";
+  const locked = rendering || uploading;
   const unsupported = capabilities !== null && !capabilities.supported;
   useBeforeUnloadWarning(rendering);
+  useNavigationGuard(
+    rendering,
+    "A render is still running. Leaving this page cancels it. Leave anyway?",
+  );
 
   return (
     <Card className="p-5 sm:p-6">
@@ -381,11 +399,11 @@ export function RenderStudio({
                   <Icon name="download" className="h-3.5 w-3.5" />
                   Download MP4
                 </a>
-                <Button size="sm" onClick={handleUseForUpload}>
+                <Button size="sm" onClick={handleUseForUpload} disabled={locked}>
                   <Icon name="upload" className="h-3.5 w-3.5" />
                   Use for upload
                 </Button>
-                <Button variant="ghost" size="sm" onClick={handleDiscard}>
+                <Button variant="ghost" size="sm" onClick={handleDiscard} disabled={locked}>
                   <Icon name="trash" className="h-3.5 w-3.5" />
                   Discard
                 </Button>
@@ -415,7 +433,7 @@ export function RenderStudio({
                     type="button"
                     role="radio"
                     aria-checked={selected}
-                    disabled={rendering}
+                    disabled={locked}
                     onClick={() => setPresetId(option.id)}
                     className={cn(
                       "flex flex-col gap-0.5 rounded-xl border px-3 py-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-50",
@@ -442,7 +460,7 @@ export function RenderStudio({
               id="render-audio"
               type="file"
               accept=".mp3,audio/mpeg"
-              disabled={rendering}
+              disabled={locked}
               onChange={(event) => {
                 selectAudioFile(event.target.files?.[0] ?? null);
               }}
@@ -454,7 +472,7 @@ export function RenderStudio({
               id="render-image"
               type="file"
               accept="image/*"
-              disabled={rendering}
+              disabled={locked}
               onChange={(event) => {
                 setImageError(null);
                 setImageFile(event.target.files?.[0] ?? null);
@@ -472,7 +490,7 @@ export function RenderStudio({
             <Input
               id="render-track-name"
               value={trackName}
-              disabled={rendering}
+              disabled={locked}
               placeholder="Midnight Loop"
               onChange={(event) => setTrackName(event.target.value)}
             />
@@ -481,11 +499,18 @@ export function RenderStudio({
           <div className="flex flex-wrap items-center gap-2">
             <Button
               onClick={handleRender}
-              disabled={!audioFile || !imageFile || rendering || unsupported || Boolean(imageError)}
+              disabled={
+                !audioFile || !imageFile || locked || unsupported || Boolean(imageError)
+              }
             >
               <Icon name="spark" className="h-4 w-4" />
               {rendering ? "Rendering…" : "Render MP4"}
             </Button>
+            {uploading ? (
+              <span className="text-xs leading-5 text-on-surface-variant">
+                Upload in progress — render controls are locked until it finishes.
+              </span>
+            ) : null}
             {rendering ? (
               <Button variant="outline" onClick={() => abortRef.current?.abort()}>
                 <Icon name="close" className="h-4 w-4" />

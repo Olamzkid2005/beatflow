@@ -70,6 +70,8 @@ export function layoutText({
   family,
   letterSpacing = 0,
   maxLines = MAX_TEXT_LINES,
+  maxHeight,
+  lineHeight = 1.1,
   measure,
 }: {
   text: string;
@@ -80,10 +82,17 @@ export function layoutText({
   family: string;
   letterSpacing?: number;
   maxLines?: number;
+  /** Optional reserved vertical space; lines never draw past it. */
+  maxHeight?: number;
+  /** Line height as a multiple of the font size. */
+  lineHeight?: number;
   measure: TextMeasure;
 }): TextLayout {
   const words = text.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
   const fontFor = (size: number) => `${weight} ${size}px ${family}`;
+  const lineHeightFor = (size: number) => Math.round(size * lineHeight);
+  const fitsHeight = (count: number, size: number) =>
+    maxHeight === undefined || count * lineHeightFor(size) <= maxHeight;
   const step = Math.max(1, Math.round(fontSize * 0.04));
   const floor = Math.min(minFontSize, fontSize);
 
@@ -92,15 +101,26 @@ export function layoutText({
     const lines = wrapWords(words, font, maxWidth, measure, letterSpacing);
     if (
       lines.length <= maxLines &&
+      fitsHeight(lines.length, size) &&
       lines.every((line) => widthOf(line, font, measure, letterSpacing) <= maxWidth)
     ) {
-      return { fontSize: size, lines, lineHeight: Math.round(size * 1.1) };
+      return { fontSize: size, lines, lineHeight: lineHeightFor(size) };
     }
   }
 
   const font = fontFor(floor);
+  const floorLineHeight = lineHeightFor(floor);
+  const heightLines =
+    maxHeight === undefined ? maxLines : Math.max(0, Math.floor(maxHeight / floorLineHeight));
+  const allowedLines = Math.min(maxLines, heightLines);
+  if (allowedLines < 1) {
+    throw new RangeError(
+      `Text needs at least ${floorLineHeight}px of height; the box reserves ${maxHeight}px.`,
+    );
+  }
+
   const allLines = wrapWords(words, font, maxWidth, measure, letterSpacing);
-  const lines = allLines.slice(0, maxLines).map((line) => {
+  const lines = allLines.slice(0, allowedLines).map((line) => {
     if (widthOf(line, font, measure, letterSpacing) <= maxWidth) return line;
     let trimmed = line;
     while (trimmed.length > 1 && widthOf(`${trimmed}…`, font, measure, letterSpacing) > maxWidth) {
@@ -108,7 +128,7 @@ export function layoutText({
     }
     return `${trimmed}…`;
   });
-  if (allLines.length > maxLines && lines.length > 0) {
+  if (allLines.length > allowedLines && lines.length > 0) {
     const lastIndex = lines.length - 1;
     if (!lines[lastIndex].endsWith("…")) {
       let last = lines[lastIndex];
@@ -118,7 +138,7 @@ export function layoutText({
       lines[lastIndex] = `${last}…`;
     }
   }
-  return { fontSize: floor, lines, lineHeight: Math.round(floor * 1.1) };
+  return { fontSize: floor, lines, lineHeight: floorLineHeight };
 }
 
 function setLetterSpacing(ctx: DrawingContext, value: number): void {
@@ -200,6 +220,8 @@ function drawTextLayer(
     weight: layer.fontWeight,
     family,
     letterSpacing: layer.letterSpacing,
+    maxHeight: layer.maxHeight,
+    lineHeight: layer.lineHeight,
     measure: (value, font) => {
       ctx.font = font;
       return ctx.measureText(value).width;

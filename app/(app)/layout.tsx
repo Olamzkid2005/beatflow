@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/auth";
 import { AppShell } from "@/components/app-shell";
+import { NavigationGuard } from "@/components/navigation-guard";
 import { isOwner } from "@/lib/owner";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -22,6 +23,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         image: session.user.image ?? null,
       }}
     >
+      <NavigationGuard />
       {children}
     </AppShell>
   );

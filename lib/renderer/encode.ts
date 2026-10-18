@@ -8,6 +8,7 @@ import {
 } from "mediabunny";
 
 import { RENDER_AUDIO, RENDER_VIDEO } from "./capabilities";
+import { assertExportCanvas, normalizeFps } from "./validate";
 
 export type EncodeStage = "video" | "audio" | "finalize";
 export type EncodeProgress = (stage: EncodeStage, pct: number) => void;
@@ -32,6 +33,10 @@ export async function encodeMp4({
   signal,
   onProgress,
 }: EncodeOptions): Promise<Blob> {
+  // This function is public too: validate independently of renderVideo().
+  const frameRate = normalizeFps(fps);
+  assertExportCanvas({ width: canvas.width, height: canvas.height });
+
   const target = new BufferTarget();
   const output = new Output({
     format: new Mp4OutputFormat({ fastStart: "in-memory" }),
@@ -52,8 +57,8 @@ export async function encodeMp4({
   output.addAudioTrack(audioSource);
 
   const duration = audio.duration;
-  const frameDuration = 1 / fps;
-  const totalFrames = Math.max(1, Math.ceil(duration * fps));
+  const frameDuration = 1 / frameRate;
+  const totalFrames = Math.max(1, Math.ceil(duration * frameRate));
 
   try {
     await output.start();
