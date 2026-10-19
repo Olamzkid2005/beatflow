@@ -18,14 +18,20 @@
     "a11y:check": "node tools/a11y-check.mjs",
     "memory:check": "node tools/memory-check.mjs",
     "motion:check": "node tools/motion-check.mjs",
-    "upload:check": "node tools/f03-upload-check.mjs"
+    "upload:check": "node tools/f03-upload-check.mjs",
+    "studio:check": "node tools/studio-check.mjs"
   },
   "dependencies": {
+    "@ffmpeg/core": "^0.12.10",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
+    "konva": "^10.9.0",
     "mediabunny": "^1.61.4",
     "next": "16.4.0",
     "next-auth": "^5.0.0-beta.32",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "react-konva": "^19.3.2",
     "zod": "^4.6.7"
   },
   "devDependencies": {

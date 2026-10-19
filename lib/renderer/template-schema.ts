@@ -160,7 +160,7 @@ const graphicSettingsSchema = z
   })
   .strict();
 
-const graphicLayerSchema = z
+export const graphicLayerSchema = z
   .object({
     type: z.literal("graphic"),
     generator: z.literal("orbital-field"),
