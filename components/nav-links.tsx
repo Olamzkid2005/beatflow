@@ -8,6 +8,8 @@ import { cn } from "@/components/ui/primitives";
 
 const items: Array<{ href: string; label: string; shortLabel: string; icon: IconName }> = [
   { href: "/generate", label: "Studio", shortLabel: "Studio", icon: "studio" },
+  { href: "/templates", label: "My Templates", shortLabel: "Templates", icon: "studio" },
+  { href: "/batch", label: "Batch automation", shortLabel: "Batch", icon: "movie" },
   { href: "/history", label: "History", shortLabel: "History", icon: "history" },
   { href: "/settings", label: "Producer settings", shortLabel: "Settings", icon: "settings" },
 ];

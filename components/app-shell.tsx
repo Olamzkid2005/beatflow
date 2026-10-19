@@ -92,7 +92,7 @@ export function AppShell({ user, children }: { user: AppShellUser; children: Rea
               Upload path ready
             </div>
             <p className="mt-2 text-xs leading-5 text-on-surface-variant">
-              Rendering and full publishing remain gated.
+              Local templates and batch rendering are ready. Live YouTube publishing still needs deployed-origin verification.
             </p>
           </div>
         </div>
