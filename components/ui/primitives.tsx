@@ -1,6 +1,7 @@
 import {
   cloneElement,
   isValidElement,
+  useId,
   type ButtonHTMLAttributes,
   type HTMLAttributes,
   type InputHTMLAttributes,
@@ -120,15 +121,19 @@ type FieldProps = {
 };
 
 export function Field({ label, htmlFor, hint, error, className, children }: FieldProps) {
-  const hintId = hint && htmlFor ? `${htmlFor}-hint` : undefined;
-  const errorId = error && htmlFor ? `${htmlFor}-error` : undefined;
+  const generatedId = useId();
+  const child = isValidElement<Record<string, unknown>>(children) ? children : null;
+  const controlId = htmlFor ?? (typeof child?.props.id === 'string' ? child.props.id : generatedId);
+  const hintId = hint ? `${controlId}-hint` : undefined;
+  const errorId = error ? `${controlId}-error` : undefined;
   const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined;
 
   // A field with a hint or error must expose that text to assistive tech.
   const control =
-    describedBy && isValidElement(children)
-      ? cloneElement(children as ReactElement<Record<string, unknown>>, {
-          "aria-describedby": describedBy,
+    child
+      ? cloneElement(child as ReactElement<Record<string, unknown>>, {
+          id: controlId,
+          "aria-describedby": [child.props['aria-describedby'], describedBy].filter(Boolean).join(' ') || undefined,
           ...(error ? { "aria-invalid": true } : {}),
         })
       : children;
@@ -136,7 +141,7 @@ export function Field({ label, htmlFor, hint, error, className, children }: Fiel
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
       <div className="flex items-center justify-between gap-3">
-        <Label htmlFor={htmlFor}>{label}</Label>
+        <Label htmlFor={controlId}>{label}</Label>
         {hint ? (
           <span id={hintId} className="font-mono text-[10px] tracking-wide text-outline">
             {hint}

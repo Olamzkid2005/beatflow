@@ -1,5 +1,5 @@
 import { analyzeAudio } from "./audio-analysis";
-import { decodeAudioFile, type DecodedAudio } from "./audio";
+import { assertDecodedSource, decodeAudioFile, type DecodedAudio } from "./audio";
 import {
   ensureTemplateFonts,
   loadTemplateAssets,
@@ -178,6 +178,7 @@ export async function renderVideo(
   let assets: RenderAssets | undefined;
   try {
     onProgress?.({ stage: "decode", pct: 0 });
+    if (options.decodedAudio) assertDecodedSource(options.decodedAudio, input.audio);
     const audio = options.decodedAudio ?? (await decodeAudioFile(input.audio, profile.maxSeconds));
     signal?.throwIfAborted();
     if (audio.duration > profile.maxSeconds) {

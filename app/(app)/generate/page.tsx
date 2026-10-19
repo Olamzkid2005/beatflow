@@ -224,13 +224,10 @@ function UploadStudio() {
       <RenderStudio
         producerName={defaults.producerName}
         uploading={busy}
-        onRenderedFile={(rendered, artifactId) => {
+        onSourceChange={(trackTitle) => { titleTouchedRef.current = false; setTitle(trackTitle); }}
+        onRenderedFile={(rendered, artifactId, trackTitle) => {
           setSelection(adoptArtifact(rendered, artifactId));
-          // A track handoff fills an untouched title with its own name instead
-          // of leaving the previous demo or track name in place.
-          if (!titleTouchedRef.current) {
-            setTitle(titleFromFileName(rendered.name));
-          }
+          if (!titleTouchedRef.current) setTitle(trackTitle);
         }}
         onReleaseArtifact={(artifactId) =>
           setSelection((current) => releaseArtifact(current, artifactId))
@@ -297,7 +294,12 @@ function UploadStudio() {
                 type="file"
                 accept="video/mp4"
                 disabled={busy}
-                onChange={(event) => setSelection(chooseFile(event.target.files?.[0] ?? null))}
+                onChange={(event) => {
+                  const selected = event.target.files?.[0] ?? null;
+                  setSelection(chooseFile(selected));
+                  titleTouchedRef.current = false;
+                  setTitle(selected ? titleFromFileName(selected.name) : "");
+                }}
                 className="peer sr-only"
               />
               <label
@@ -312,7 +314,11 @@ function UploadStudio() {
                   setDragging(false);
                   if (busy) return;
                   const dropped = event.dataTransfer.files?.[0];
-                  if (dropped) setSelection(chooseFile(dropped));
+                  if (dropped) {
+                    setSelection(chooseFile(dropped));
+                    titleTouchedRef.current = false;
+                    setTitle(titleFromFileName(dropped.name));
+                  }
                 }}
                 className={cn(
                   "group relative flex aspect-video cursor-pointer flex-col items-center justify-center overflow-hidden border-b border-surface-container-highest bg-surface-container-lowest text-center outline-none transition focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50",

@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/primitives";
 import type { AnalysisMode } from "@/lib/renderer/audio-analysis";
 import type { AudioFeatureTable } from "@/lib/renderer/audio-features";
-import type { DecodedAudio } from "@/lib/renderer/audio";
+import { resolveTrackName, type DecodedAudio } from "@/lib/renderer/audio";
 import type { GraphicSettings } from "@/lib/renderer/graphics";
 import { ORBITAL_BOUNDS, ORBITAL_DEFAULTS } from "@/lib/renderer/graphics";
 import type { PreparedScene } from "@/lib/renderer/scene";
@@ -34,10 +34,12 @@ type RenderResult = {
   name: string;
   /** Identifies the render that owns the upload handoff. */
   artifactId: string;
+  title: string;
 };
 
 type AnalysisState = {
   status: "idle" | "analyzing" | "ready" | "error";
+  source?: File;
   mode?: AnalysisMode;
   message?: string;
 };
@@ -128,11 +130,13 @@ export function RenderStudio({
   uploading,
   onRenderedFile,
   onReleaseArtifact,
+  onSourceChange,
 }: {
   producerName: string;
   uploading: boolean;
-  onRenderedFile: (file: File, artifactId: string) => void;
+  onRenderedFile: (file: File, artifactId: string, title: string) => void;
   onReleaseArtifact: (artifactId: string) => void;
+  onSourceChange: (title: string) => void;
 }) {
   const [presetId, setPresetId] = useState(DEFAULT_TEMPLATE_ID);
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -163,7 +167,6 @@ export function RenderStudio({
   const bitmapRef = useRef<{ file: File; bitmap: ImageBitmap } | null>(null);
   const resultUrlRef = useRef<string | null>(null);
   const resultBlobRef = useRef<Blob | null>(null);
-  const trackNameTouchedRef = useRef(false);
 
   const preparedRef = useRef<PreparedScene | null>(null);
   const rendererRef = useRef<typeof import("@/lib/renderer") | null>(null);
@@ -187,7 +190,7 @@ export function RenderStudio({
 
   // Without an animated selection and a track there is nothing to analyze, so
   // the idle state is derived rather than written back from an effect.
-  const analysisState: AnalysisState = animated && audioFile ? analysis : { status: "idle" };
+  const analysisState: AnalysisState = animated && audioFile && analysis.source === audioFile ? analysis : { status: "idle" };
 
   const bpmValid =
     bpm.trim() === "" ||
@@ -269,7 +272,7 @@ export function RenderStudio({
     void (async () => {
       const renderer = await import("@/lib/renderer");
       if (cancelled || generation !== analysisGenerationRef.current) return;
-      setAnalysis({ status: "analyzing" });
+      setAnalysis({ status: "analyzing", source: audioFile });
       setAnalysisPct(0);
       const decoded = await renderer.decodeAudioFile(audioFile, renderer.ANIMATED_MAX_SECONDS);
       if (cancelled || generation !== analysisGenerationRef.current) return;
@@ -282,7 +285,7 @@ export function RenderStudio({
       if (cancelled || generation !== analysisGenerationRef.current) return;
       decodedRef.current = decoded;
       featuresRef.current = result.table;
-      setAnalysis({ status: "ready", mode: result.mode });
+      setAnalysis({ status: "ready", source: audioFile, mode: result.mode });
       setAnalysisPct(1);
       drawCurrentFrame();
     })().catch((reason) => {
@@ -292,6 +295,7 @@ export function RenderStudio({
       featuresRef.current = null;
       setAnalysis({
         status: "error",
+        source: audioFile,
         message: reason instanceof Error ? reason.message : "The track could not be analyzed.",
       });
     });
@@ -320,7 +324,7 @@ export function RenderStudio({
         context,
         template,
         {
-          track_name: trackName || "Track title",
+          track_name: audioFile ? resolveTrackName(trackName, audioFile.name) : "Track title",
           producer_name: producerName,
           filename: audioFile?.name ?? "",
           message_text: message.trim() || undefined,
@@ -364,15 +368,18 @@ export function RenderStudio({
     if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
     audioUrlRef.current = file ? URL.createObjectURL(file) : null;
     setAudioUrl(audioUrlRef.current);
+    analysisAbortRef.current?.abort();
+    analysisGenerationRef.current += 1;
+    decodedRef.current = null;
+    featuresRef.current = null;
+    setAnalysis({ status: "idle", source: file ?? undefined });
+    setAnalysisPct(0);
     setAudioFile(file);
-    // Keep an explicit edit, but never leave the previous track's name on a
-    // newly selected source.
-    if (!file) {
-      trackNameTouchedRef.current = false;
-      setTrackName("");
-    } else if (!trackNameTouchedRef.current) {
-      setTrackName(trackNameFromFileName(file.name));
-    }
+    const nextTitle = file ? trackNameFromFileName(file.name) : "";
+    setTrackName(nextTitle);
+    onSourceChange(nextTitle);
+    setBpm("");
+    setKey("");
   }
 
   // Decode the background once per file and reuse it (memory rule in section 5).
@@ -499,7 +506,7 @@ export function RenderStudio({
 
     const controller = new AbortController();
     abortRef.current = controller;
-    const resolvedName = trackName.trim() || trackNameFromFileName(audioFile.name);
+    const resolvedName = resolveTrackName(trackName, audioFile.name);
 
     try {
       const renderer = await import("@/lib/renderer");
@@ -535,6 +542,7 @@ export function RenderStudio({
         bytes: blob.size,
         name: `${resolvedName.replace(/[^\w -]+/g, "").trim() || "beatflow-render"}.mp4`,
         artifactId: crypto.randomUUID(),
+        title: resolvedName,
       });
       setProgress(null);
       setPhase("done");
@@ -554,17 +562,17 @@ export function RenderStudio({
   function handleUseForUpload() {
     const blob = resultBlobRef.current;
     if (uploading || !blob || !result) return;
-    onRenderedFile(new File([blob], result.name, { type: "video/mp4" }), result.artifactId);
+    onRenderedFile(new File([blob], result.name, { type: "video/mp4" }), result.artifactId, result.title);
   }
 
   const rendering = phase === "rendering";
   const locked = rendering || uploading;
   const unsupported = capabilities !== null && !capabilities.supported;
   const settingsLocked = locked;
-  useBeforeUnloadWarning(rendering);
+  useBeforeUnloadWarning(rendering || Boolean(result));
   useNavigationGuard(
-    rendering,
-    "A render is still running. Leaving this page cancels it. Leave anyway?",
+    !uploading && (rendering || Boolean(result)),
+    rendering ? "A render is still running. Leaving this page cancels it. Leave anyway?" : "This rendered MP4 is only in memory. Download or save it before leaving. Leave anyway?",
   );
 
   return (
@@ -743,6 +751,11 @@ export function RenderStudio({
                       disabled={locked}
                       onChange={() => {
                         stopAnimation();
+                        analysisAbortRef.current?.abort();
+                        analysisGenerationRef.current += 1;
+                        decodedRef.current = null;
+                        featuresRef.current = null;
+                        setAnalysis({ status: "idle" });
                         setPresetId(option.id);
                       }}
                       className="sr-only"
@@ -802,7 +815,6 @@ export function RenderStudio({
               disabled={locked}
               placeholder="Midnight Loop"
               onChange={(event) => {
-                trackNameTouchedRef.current = true;
                 setTrackName(event.target.value);
               }}
             />

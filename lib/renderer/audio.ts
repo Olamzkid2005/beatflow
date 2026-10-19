@@ -14,7 +14,17 @@ export type DecodedAudio = {
   duration: number;
   sampleRate: number;
   channels: number;
+  /** Object identity is deliberate: equal file metadata does not prove equal audio. */
+  source?: File;
 };
+
+export function assertDecodedSource(decoded: Pick<DecodedAudio, "source">, file: File): void {
+  if (decoded.source !== file) throw new Error("Cached audio belongs to a different source. Analyze this track again.");
+}
+
+export function resolveTrackName(title: string, filename: string): string {
+  return title.trim() || filename.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim() || "Untitled";
+}
 
 /** Rejects impossible inputs before any decode allocation. Pure and testable. */
 export function assertAudioBudget(
@@ -81,6 +91,7 @@ export async function decodeAudioFile(
       decoded.numberOfChannels === OUTPUT_CHANNELS ? decoded : await toStereo(decoded);
     return {
       buffer,
+      source: file,
       duration: buffer.duration,
       sampleRate: buffer.sampleRate,
       channels: buffer.numberOfChannels,

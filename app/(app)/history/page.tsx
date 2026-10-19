@@ -16,6 +16,7 @@ import {
   addHistoryEntry,
   clearHistory,
   historyStatus,
+  historyStorageWarning,
   readHistory,
   type UploadHistoryEntry,
 } from "@/lib/history";
@@ -60,6 +61,7 @@ function statusLabel(status: ReturnType<typeof historyStatus>) {
   if (status === "publish-time-passed") return "Publish time passed";
   if (status === "failed") return "Upload issue";
   if (status === "unknown") return "Check in Studio";
+  if (status === "private") return "Private";
   return "Unlisted";
 }
 
@@ -75,7 +77,10 @@ export default function HistoryPage() {
     const refresh = () => {
       readHistory()
         .then((next) => {
-          if (active) setEntries(next);
+          if (active) {
+            setEntries(next);
+            setSyncError(historyStorageWarning());
+          }
         })
         .catch(() => {
           if (active) setEntries([]);

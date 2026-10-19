@@ -64,6 +64,7 @@ export function useUploadJob() {
 
   const abortRef = useRef<AbortController | null>(null);
   const attemptRef = useRef<UploadAttempt | null>(null);
+  const guardedFilesRef = useRef(new WeakSet<File>());
 
   useEffect(() => {
     return () => {
@@ -91,6 +92,7 @@ export function useUploadJob() {
 
   async function startUpload(input: StartUploadInput): Promise<void> {
     if (abortRef.current) return;
+    if (input.file && guardedFilesRef.current.has(input.file) && !window.confirm("This file has already been uploaded or has an uncertain outcome. Check YouTube Studio first. Create another upload anyway?")) return;
 
     setError(null);
     setOutcomeUnknown(false);
@@ -170,6 +172,7 @@ export function useUploadJob() {
 
       controller.signal.throwIfAborted();
 
+      guardedFilesRef.current.add(file);
       const completed: UploadResult = {
         videoId,
         publishAt,
@@ -186,7 +189,10 @@ export function useUploadJob() {
         createdAt: new Date().toISOString(),
       });
     } catch (uploadError) {
+      guardedFilesRef.current.add(file);
       if (controller.signal.aborted) {
+        setOutcomeUnknown(true);
+        if (attemptRef.current) attemptRef.current.failedAt = new Date().toISOString();
         setProgress(null);
         setError(
           "Upload cancelled. If YouTube already accepted it, cancellation does not remove the video; check YouTube Studio before uploading again.",

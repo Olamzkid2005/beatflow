@@ -15,6 +15,8 @@ export type UploadOptions = {
   file: Blob;
   chunkSize?: number;
   signal?: AbortSignal;
+  /** Query an existing persisted session before sending any media. */
+  resume?: boolean;
   onProgress?: (progress: UploadProgress) => void;
 };
 
@@ -75,6 +77,7 @@ export async function uploadToResumableSession({
   file,
   chunkSize = DEFAULT_CHUNK_SIZE,
   signal,
+  resume = false,
   onProgress,
 }: UploadOptions): Promise<string> {
   if (!Number.isSafeInteger(chunkSize) || chunkSize < CHUNK_ALIGNMENT || chunkSize % CHUNK_ALIGNMENT !== 0) {
@@ -86,7 +89,7 @@ export async function uploadToResumableSession({
   let offset = 0;
   let highestOffset = 0;
   let attempts = 0;
-  let queryStatus = false;
+  let queryStatus = resume;
   const report = () => onProgress?.({
     uploadedBytes: offset,
     totalBytes,
@@ -144,7 +147,7 @@ export async function uploadToResumableSession({
       const body: unknown = await response.json().catch(() => null);
       signal?.throwIfAborted();
       if (!body || typeof body !== "object" || !("id" in body) || typeof body.id !== "string" || !body.id) {
-        throw new UploadError("YouTube accepted the upload but returned no video id. Check YouTube Studio before uploading again.", response.status, false);
+        throw new UploadOutcomeUnknownError("YouTube accepted the upload but returned no video id. Check YouTube Studio before uploading again.");
       }
       offset = totalBytes;
       report();

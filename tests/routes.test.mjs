@@ -105,6 +105,13 @@ test("outcome lookup returns bounded candidates, never an auto-picked video", as
   assert(!urls.some((url) => url.includes("search")));
 });
 
+test("outcome lookup searches later playlist pages rather than only recent 25 uploads", async (t) => {
+  const urls=[];
+  t.mock.method(globalThis,'fetch',async url=>{urls.push(String(url));if(String(url).includes('/channels'))return Response.json({items:[{contentDetails:{relatedPlaylists:{uploads:'UU-owner'}}}]});if(!String(url).includes('pageToken='))return Response.json({items:[],nextPageToken:'page-two'});return Response.json({items:[{snippet:{title:'Older beat',publishedAt:'2026-10-18T12:00:00Z',resourceId:{videoId:'dQw4w9WgXcQ'}}}]});});
+  const response=await latestUpload(await request('/api/youtube/latest-upload',{title:'Older beat',notBefore:'2026-10-18T11:59:00Z',notAfter:'2026-10-18T12:01:00Z'}),{});
+  assert.equal(response.status,200);assert.equal((await response.json()).candidates[0].videoId,'dQw4w9WgXcQ');assert(urls.some(url=>url.includes('pageToken=page-two')));
+});
+
 test("outcome lookup refuses to guess and guards its input", async (t) => {
   t.mock.method(globalThis, "fetch", async (url) => {
     if (String(url).includes("/channels")) {

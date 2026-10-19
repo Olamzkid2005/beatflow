@@ -268,12 +268,18 @@ test("an async IndexedDB open failure keeps the receipt in memory and reports it
       ["receipt"],
       "the successful upload receipt must still be visible this session",
     );
+    assert.equal(await addHistoryEntry(entry("receipt-2")), false);
+    assert.deepEqual((await readHistory()).map((row) => row.videoId).sort(), ["receipt", "receipt-2"], "consecutive failures preserve all fallback receipts");
   } finally {
     if (previousWindow === undefined) delete globalThis.window;
     else globalThis.window = previousWindow;
     if (previousIndexedDb === undefined) delete globalThis.indexedDB;
     else globalThis.indexedDB = previousIndexedDb;
   }
+});
+
+test("verified private unscheduled videos remain private", () => {
+  assert.equal(historyStatus(entry("private", undefined, { privacyStatus: "private", checkedAt: "2026-10-19T10:00:00Z" })), "private");
 });
 
 test("release state follows the schedule", () => {

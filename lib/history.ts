@@ -21,6 +21,16 @@ let controller: HistoryController | null = null;
 /** False once this session had to use memory because IndexedDB was unavailable. */
 let durable = true;
 let channel: BroadcastChannel | null = null;
+// Keep a bounded session mirror even when a durable controller later fails.
+const receipts = new Map<string, UploadHistoryEntry>();
+let storageWarning: string | null = null;
+export function historyStorageWarning(): string | null { return storageWarning; }
+function remember(rows: UploadHistoryEntry[]): void {
+  for (const row of rows) receipts.set(row.videoId, row);
+  const sorted = [...receipts.values()].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  receipts.clear();
+  for (const row of sorted.slice(0, MAX_ENTRIES)) receipts.set(row.videoId, row);
+}
 
 function legacyStorage() {
   if (typeof window === "undefined") return undefined;
@@ -83,9 +93,13 @@ export async function readHistory(): Promise<UploadHistoryEntry[]> {
   ensureChannel();
   try {
     if (!durable) await retryDurable().catch(() => {});
-    return await history().list();
+    const rows = await history().list();
+    remember(rows);
+    storageWarning = durable ? null : "History is only held in memory because browser storage is unavailable.";
+    return rows;
   } catch {
-    return [];
+    storageWarning = "Could not read browser history storage. Previously loaded receipts are shown; retry before assuming it is empty.";
+    return [...receipts.values()];
   }
 }
 
@@ -96,6 +110,7 @@ export async function readHistory(): Promise<UploadHistoryEntry[]> {
  */
 export async function addHistoryEntry(entry: UploadHistoryEntry): Promise<boolean> {
   if (typeof window === "undefined") return false;
+  remember([entry]);
   try {
     if (!durable) {
       await retryDurable(entry);
@@ -111,10 +126,11 @@ export async function addHistoryEntry(entry: UploadHistoryEntry): Promise<boolea
     const memory = memoryHistory();
     controller = memory;
     try {
-      await memory.add(entry);
+      for (const row of receipts.values()) await memory.add(row);
     } catch {
       // The warning is still the honest result.
     }
+    storageWarning = "History is only held in memory because browser storage is unavailable.";
     announce();
     return false;
   }
@@ -125,12 +141,14 @@ export async function clearHistory(): Promise<void> {
   // Never imply the durable rows were cleared when only memory is available.
   if (!durable) throw new Error("History storage is unavailable; nothing was cleared.");
   await history().clear();
+  receipts.clear();
+  storageWarning = null;
   announce();
 }
 
 export function historyStatus(
   entry: UploadHistoryEntry,
-): "scheduled" | "published" | "publish-time-passed" | "unlisted" | "unknown" | "failed" {
+): "scheduled" | "published" | "publish-time-passed" | "unlisted" | "private" | "unknown" | "failed" {
   // A confirmed recovery never read the video's real release state.
   if (entry.privacyStatus === "unknown" && !entry.checkedAt) return "unknown";
   if (
@@ -144,6 +162,6 @@ export function historyStatus(
   // A real status check proves publication; a timestamp alone does not.
   if (entry.checkedAt && entry.privacyStatus === "public") return "published";
   if (entry.checkedAt && entry.privacyStatus === "unlisted") return "unlisted";
-  if (!entry.publishAt) return entry.checkedAt ? "unlisted" : "unknown";
+  if (!entry.publishAt) return entry.checkedAt && entry.privacyStatus === "private" ? "private" : "unknown";
   return Date.parse(entry.publishAt) > Date.now() ? "scheduled" : "publish-time-passed";
 }

@@ -97,19 +97,28 @@ export function NavigationGuard() {
     };
 
     // Once work ends, step off the duplicate so one back press still reaches
-    // the previous page instead of an inert same-URL entry.
+    // the previous page. Reconcile in a microtask: guard cleanups and setups
+    // run in the same commit, and acting between them used to look like "work
+    // finished" and send the owner back a page mid-navigation.
     const disarm = () => {
-      if (!trapped || isNavigationBlocked() || !isTrap(window.history.state)) return;
+      if (!trapped || isNavigationBlocked()) return;
       trapped = false;
-      window.history.back();
+      if (isTrap(window.history.state)) window.history.back();
+    };
+    let scheduled = false;
+    const reconcile = () => {
+      if (scheduled) return;
+      scheduled = true;
+      queueMicrotask(() => {
+        scheduled = false;
+        disarm();
+        arm();
+      });
     };
 
     window.addEventListener("popstate", onPopState);
-    const unsubscribe = subscribeNavigationGuards(() => {
-      arm();
-      disarm();
-    });
-    arm();
+    const unsubscribe = subscribeNavigationGuards(reconcile);
+    reconcile();
     return () => {
       window.removeEventListener("popstate", onPopState);
       unsubscribe();

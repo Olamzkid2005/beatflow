@@ -68,26 +68,28 @@ export const POST = auth(async (request) => {
       );
     }
 
-    const itemsResponse = await authedFetch(
-      `${YOUTUBE_API_BASE}/playlistItems?part=snippet&maxResults=25&playlistId=${encodeURIComponent(uploadsPlaylist)}`,
-      owner.accessToken,
-    );
-    if (!itemsResponse.ok) {
-      return NextResponse.json(
-        { error: await readGoogleError(itemsResponse) },
-        { status: itemsResponse.status },
+    const uploads: ReturnType<typeof parseChannelUploads> = [];
+    let pageToken: string | undefined;
+    const deadline = Date.now() + 20_000;
+    for (let page = 0; page < 10; page += 1) {
+      const itemsResponse = await authedFetch(
+        `${YOUTUBE_API_BASE}/playlistItems?part=snippet&maxResults=50&playlistId=${encodeURIComponent(uploadsPlaylist)}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`,
+        owner.accessToken,
+        { signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())) },
       );
+      if (!itemsResponse.ok) return NextResponse.json({ error: await readGoogleError(itemsResponse) }, { status: itemsResponse.status });
+      const payload: unknown = await itemsResponse.json();
+      uploads.push(...parseChannelUploads(payload));
+      const next = (payload as { nextPageToken?: unknown } | null)?.nextPageToken;
+      pageToken = typeof next === "string" && next ? next : undefined;
+      if (!pageToken || Date.now() >= deadline) break;
     }
-
-    const candidates = findMatchingUploads(
-      parseChannelUploads(await itemsResponse.json()),
-      parsed.data,
-    );
+    const candidates = findMatchingUploads(uploads, parsed.data);
     if (candidates.length === 0) {
       return NextResponse.json(
         {
           error:
-            "No upload on this channel matches that title yet. YouTube may still be processing it — try again in a minute.",
+            "No upload in the latest 500 channel uploads matches that title yet. YouTube may still be processing it; retry or inspect YouTube Studio before creating another upload.",
         },
         { status: 404 },
       );

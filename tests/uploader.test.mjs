@@ -126,6 +126,18 @@ test("does not report success after cancellation while reading the final resourc
   assert(!progress.includes(100));
 });
 
+test("an accepted upload without a readable ID stays recoverable", async (t) => {
+  sequence(t, [Response.json({}, { status: 201 })]);
+  await assert.rejects(uploadToResumableSession(options()), { name: "UploadOutcomeUnknownError" });
+});
+
+test("resuming a persisted session queries its confirmed offset before sending bytes", async (t) => {
+  const calls = sequence(t, [new Response(null, { status: 308, headers: { Range: `bytes=0-${CHUNK_ALIGNMENT - 1}` } }), Response.json({ id: "resumed" })]);
+  assert.equal(await uploadToResumableSession({ ...options(), resume: true }), "resumed");
+  assert.equal(calls[0].headers["Content-Range"], `bytes */${CHUNK_ALIGNMENT * 2}`);
+  assert.equal(calls[1].body.size, CHUNK_ALIGNMENT);
+});
+
 test("returns the existing video ID when a recovery query finds the upload completed", async (t) => {
   sequence(t, [new Response(null, { status: 503 }), Response.json({ id: "created-once" }, { status: 201 })]);
   assert.equal(await drainTimers(t, uploadToResumableSession(options())), "created-once");
