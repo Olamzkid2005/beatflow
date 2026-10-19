@@ -199,3 +199,23 @@ Verified (Chrome 155, production build):
 All YouTube traffic in these checks was mocked; no upload or publication was performed. Live
 OAuth/CORS/quota/processing/publication, long-form resource use for custom documents, and
 external-device playback remain open external acceptance items.
+
+### Post-push review corrections
+
+- The FFmpeg path no longer converts sRGB→BT.709 before JPEG encoding and then converts again
+  inside FFmpeg. It now lets FFmpeg perform one explicit full-range BT.601→limited BT.709
+  conversion, with the same verified container/SPS tags.
+- Animation keyframes are sorted once per track instead of on every frame.
+- Cancelling an export or pausing the queue no longer appears as an error.
+- The canvas scale clamp now matches the schema (0.01–20).
+- Branding roles shown in the editor are limited to effects that actually apply; legacy
+  producer/message roles were no-ops because those values already come from variables.
+- Duplicate-upload protection now keys on upload identity (name, size, modified time), so a
+  re-wrapped File for the same rendered artifact still prompts before another session.
+- Batch preview decodes/analyses audio once per source file rather than per title keystroke,
+  and the editor debounces image reloads while typing.
+- A rejected upload-initialization response is a normal failure (no session could exist);
+  only network/timeout or unusable responses remain “unknown outcome”.
+
+Re-verified: lint, TypeScript, build, 125 tests, 16 Studio checks (including batch preview and
+FFmpeg export), and 25 upload assertions.

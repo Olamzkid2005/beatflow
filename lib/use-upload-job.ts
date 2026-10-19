@@ -64,7 +64,10 @@ export function useUploadJob() {
 
   const abortRef = useRef<AbortController | null>(null);
   const attemptRef = useRef<UploadAttempt | null>(null);
-  const guardedFilesRef = useRef(new WeakSet<File>());
+  // A new File instance can wrap the same bytes (render handoff), so identity
+  // alone is not enough to stop a second upload of the same artifact.
+  const guardedUploadsRef = useRef(new Set<string>());
+  const uploadKey = (file: File) => `${file.name}\u0000${file.size}\u0000${file.lastModified}`;
 
   useEffect(() => {
     return () => {
@@ -92,7 +95,7 @@ export function useUploadJob() {
 
   async function startUpload(input: StartUploadInput): Promise<void> {
     if (abortRef.current) return;
-    if (input.file && guardedFilesRef.current.has(input.file) && !window.confirm("This file has already been uploaded or has an uncertain outcome. Check YouTube Studio first. Create another upload anyway?")) return;
+    if (input.file && guardedUploadsRef.current.has(uploadKey(input.file)) && !window.confirm("This file has already been uploaded or has an uncertain outcome. Check YouTube Studio first. Create another upload anyway?")) return;
 
     setError(null);
     setOutcomeUnknown(false);
@@ -172,7 +175,7 @@ export function useUploadJob() {
 
       controller.signal.throwIfAborted();
 
-      guardedFilesRef.current.add(file);
+      guardedUploadsRef.current.add(uploadKey(file));
       const completed: UploadResult = {
         videoId,
         publishAt,
@@ -189,7 +192,7 @@ export function useUploadJob() {
         createdAt: new Date().toISOString(),
       });
     } catch (uploadError) {
-      guardedFilesRef.current.add(file);
+      guardedUploadsRef.current.add(uploadKey(file));
       if (controller.signal.aborted) {
         setOutcomeUnknown(true);
         if (attemptRef.current) attemptRef.current.failedAt = new Date().toISOString();

@@ -49,9 +49,16 @@ export async function retryJob(job:BatchJob):Promise<void>{
  if(job.state==='unknown'&&!job.sessionUri)throw new Error('Resolve the unknown outcome on your channel before retrying.');
  await saveJob({...job,state:job.outputAssetId?'rendered':'queued',error:null});
 }
+class ApiResponseError extends Error{
+ constructor(message:string,readonly status:number){super(message);this.name='ApiResponseError';}
+}
 async function api(path:string,body:unknown,signal?:AbortSignal):Promise<Record<string,unknown>>{
  const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(30000)]):AbortSignal.timeout(30000)});
- const data=await response.json().catch(()=>null);if(!response.ok||!data)throw new Error(data?.issues?.map((i:{message:string})=>i.message).join(' ')||data?.error||`Request failed (${response.status}).`);return data;
+ const data=await response.json().catch(()=>null);
+ const message=data?.issues?.map((i:{message:string})=>i.message).join(' ')||data?.error||`Request failed (${response.status}).`;
+ if(!response.ok)throw new ApiResponseError(message,response.status);
+ if(!data)throw new Error(`The server returned no usable response (${response.status}).`);
+ return data;
 }
 export async function refreshJob(job:BatchJob):Promise<BatchJob>{
  if(!job.videoId)return job;const result=await api('/api/youtube/video-status',{videoIds:[job.videoId]});const videos=result.videos as Array<Record<string,unknown>>|undefined;const video=videos?.find(v=>v.videoId===job.videoId);
@@ -91,7 +98,9 @@ export async function runJob(original:BatchJob,options:{signal:AbortSignal;onPro
   try{await refreshJob(job);}catch(error){await update({error:`Upload accepted (${id}); status check failed: ${error instanceof Error?error.message:String(error)}`});}
  }catch(error){
   const message=error instanceof Error?error.message:String(error);
-  const unknown=error instanceof UploadOutcomeUnknownError||job.state==='initializing';
+  // A rejected initialization response proves no session was created. A
+  // network/timeout failure might have created one, so only that stays unknown.
+  const unknown=error instanceof UploadOutcomeUnknownError||(job.state==='initializing'&&!(error instanceof ApiResponseError));
   if(job.videoId){try{await update({state:'accepted',error:message});}catch{throw new Error(`YouTube accepted video ${job.videoId}, but local persistence failed. Copy this ID and check YouTube Studio; do not re-upload. ${message}`);}return;}
   await update({state:unknown?'unknown':options.signal.aborted?'paused':'failed',error:message,stage:unknown?'Needs recovery':options.signal.aborted?'Paused':'Failed'});
   if(error instanceof UploadError&&[404,410].includes(error.status))await update({state:'unknown',error:'The resumable session expired. Check YouTube before creating a replacement upload.'});
