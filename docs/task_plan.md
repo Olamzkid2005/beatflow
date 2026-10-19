@@ -1,5 +1,105 @@
 # BeatFlow comprehensive review plan
 
+## Active build: complete local-first Template Studio and batch automation
+
+Owner decisions (current request): owner-only; no cloud services; open tab for sequential
+render/upload; keep static 15-minute and animated 5-minute limits. Approve a batch once,
+then automate. Recurring weekly slots (e.g. Wednesday 17:00 in a chosen timezone), multiple
+slots, first eligible date, per-track overrides, skip slots reserved by known jobs/history.
+Dates must be previewed before approval. No real upload/deployment/commit is authorized
+by local verification; UI approval permits the owner's subsequent uploads.
+
+Acceptance boundaries:
+- Preserve v1/v2 presets and owner gates. Editor-neutral versioned authoring documents.
+- New `/templates` library/editor and `/batch` desk; templates/branding/assets/jobs in IndexedDB,
+  portable template JSON, errors on failed writes, immutable scene+asset snapshots for jobs.
+- Preset/customize/blank flows; layer insertion/manipulation/properties/undo/redo/snapping,
+  ordering/lock/hide/group/alignment; all seven variables; image/logo/shape/text/visualizers.
+- Shared deterministic preview/export timeline (transforms, fades, easing, clip visibility),
+  waveform/progress; inherited branding resolved before job approval; validate cycles.
+- Batch multi-file selection/default+overrides, local-time slot preview/conflict avoidance,
+  sequential rendering/upload, pause/cancel/retry/reload recovery, persisted resumable sessions,
+  duplicate prevention and truthful accepted/processing/scheduled/published/unknown states.
+- Fix audited bugs with regressions. Verify Node/type/lint/build plus production Chrome
+  source-switch/editor/save/reload/scheduler/batch/upload mock and actual MP4 readback.
+- Local only: browser eviction or clearing data can destroy projects; no silent fallback for
+  job durability; no background work while browser closed; live Google acceptance separate.
+
+Phases: decisions complete; reliability in progress; reusable library pending; static editor
+pending; shared timelines pending; batch pending; fallback pending; final verification pending.
+
+Parallel workers: user requested numerous subagents; no spawn tool is exposed. Installed
+Freebuff CLI only supports interactive conversation/login, not noninteractive worker spawning.
+Use parallel independent inspections/checks without claiming delegated work.
+
+Errors/notes: bundled Next guide path for use-router.md was absent; client/server guide read.
+Existing audit docs retained as historical findings, not implementation evidence.
+
+Reliability progress: red/green storage and upload regressions completed; source identity
+checks added and passing. UI invalidates cached analysis synchronously, derives per-file
+readiness, resets per-track title/BPM/key, shares preview/export title resolver, warns on
+unsaved artifacts and repeat/uncertain uploads. Full browser verification still pending.
+Dependency install initially exceeded 60s; rerun in BACKGROUND completed exit 0. Konva,
+react-konva and local FFmpeg packages installed. npm audit reports five high dev-toolchain
+advisories through existing eslint-config-next; do not force a framework downgrade.
+
+Implemented foundations (not yet full browser-verified): commit-aware studio IndexedDB store,
+validated neutral v3 documents/preset migration, branding resolution/cycle checks, immutable
+snapshots, portable embedded-asset import/export, deterministic timeline and weekly slot
+allocator. Core tests pass (11). `/templates` now has library+three-panel Konva overlay editor,
+properties/layers/undo/redo/snapping/timeline controls/shared Canvas preview and MP4 export.
+Remaining UI verification and resource/security repairs take priority before claiming done.
+
+Batch desk/runner implemented with local media snapshots, weekly calendar preview, default
+and per-track design/date/metadata/artwork overrides, approval, Web Locks, sequential render,
+local MP4 retention, persisted resumable sessions/status queries, retries/reconciliation and
+remote status refresh. Needs end-to-end browser acceptance, not yet claimed complete.
+Production Chrome studio-check now passes 10 checks: create/edit/save/reload template,
+multi-file weekly schedule preview, durable approval, immutable design snapshots, two real
+per-track 1080p MP4 outputs, mocked one-session-per-job uploads/status checks and reload.
+Initial harness issues: reused field ID selected wrong input; wait raced document.body;
+mock upload lacked CORS headers. Repaired harness, no assertions weakened. Still need
+actual manipulation, inheritance/import, animation/fallback and interruption verification.
+
+Full suite now 121 passing. First build failed on FFmpeg ESM's dynamic Worker URL under
+Turbopack; use its supplied self-hosted UMD distribution instead of altering node_modules.
+
+---
+
+## Current session: full product logic sweep (19 October 2026)
+
+Review baseline: `baa44bb`; working tree initially clean. Audit only: no application fixes,
+new dependencies/services, deployment, Google uploads, or changes to credentials.
+
+Acceptance criteria:
+- Compare the user's pasted requirements and attached three-panel editor mockup with the
+  actual shipped code, not existing docs or the aspirational design document.
+- Cover presets, customization, blank-canvas authoring, dynamic variables, all six design
+  categories, saved-template management, static/animated timelines, publishing, batching,
+  durable recovery, branding/inheritance, snapshots, and the proposed stack.
+- Trace current logic and reproduce significant defects where practical; distinguish
+  confirmed defects, missing features, partial foundations, and external acceptance gaps.
+- Deliver `docs/product-logic-sweep.md` with file/line evidence, verification results,
+  limitations, and prioritized next milestones. Preserve existing implementation.
+
+Phases:
+1. [complete] Map requirements to implementation using source/dependencies/routes only.
+2. [complete] Trace correctness and failure paths; independently reproduce stale-track audio,
+   cross-track titles, fallback receipt loss, private-state mislabeling and duplicate submission.
+3. [complete] Fresh 106 tests, TypeScript, ESLint, production build; production Chrome motion
+   and upload/handoff replays; real IDB, fonts, MP4 readback and automated accessibility checks.
+4. [complete] `docs/product-logic-sweep.md`: full requirement matrix, file/line evidence,
+   confirmed defects, limitations, stack comparison and prioritized implementation sequence.
+
+Existing documentation and prior benchmark claims were explicitly excluded as evidence at
+owner request. No application source or dependencies changed; no live Google upload or deploy.
+Temporary browser harness initially needed a CDP serialization repair, then completed twice;
+all substantive checks passed, while the independent probes confirmed app defects. Long-form
+performance, real MP3/device matrix, deployed OAuth/CORS and real publication remain unverified.
+
+Session notes and evidence are consolidated in `docs/product-logic-sweep.md`.
+
+
 ## Current session: M0 reliability repairs
 
 Authorized by the owner after the review. Fix confirmed M0 errors without starting M1 or performing external uploads/deployment.
@@ -56,3 +156,46 @@ Understand the owner's intended end-to-end workflow, review every tracked text/c
 - `findings.md`: full product/architecture review, prioritized evidence-backed findings, current external-source corrections, media/performance gaps, verification matrix, milestone sequence.
 - `progress.md`: verification and tooling record.
 - This plan: all review phases complete; no application fixes were requested or applied.
+
+---
+
+## Completion session: verification and navigation repair (19 October 2026)
+
+The Template Studio and batch desk work is implemented and verified in a fresh production build.
+
+Fixes made during acceptance:
+- Preset customization now retains minimum font size, line height, conditional BPM/key text,
+  shadow offsets and the exact Orbital recipe/colours. Studio title fitting uses those values.
+- Preview, approval and batch preview share one resolver for titles, branding, variables and
+  image bindings, so an approved job matches what was reviewed. Logo bindings no longer shadow
+  a node's own asset.
+- Portable template imports reject unreferenced assets; exports flatten inherited branding.
+- Batch scheduling preferences persist, invalid saved zones fail visibly, and queue mutations
+  (retry, date, recovery, cancel, removal, status refresh) re-read the stored job under the Web
+  Lock so a stale tab cannot overwrite newer state.
+- Job asset removal is one IndexedDB transaction. Resume of an interrupted initialization uses
+  the existing session; only a job with no session is rejected from retry.
+- The back-button trap briefly looked inactive while guards re-registered (render handoff to
+  upload), which could send the owner back to History mid-flow. Guard messages now stay stable
+  and reconcile after React commits; verified by the full upload replay.
+- Accessibility fields now get a generated id when none is supplied, so every label is linked.
+
+Verified (Chrome 155, production build):
+- `npm test`: 125 passing, 0 failing.
+- `npx tsc --noEmit`: pass. `npm run lint`: pass. `npm run build`: pass.
+- `tools/studio-check.mjs`: 15 checks — library/blank design, dynamic text, pointer drag,
+  undo/redo, hide/lock, portable export/import, reload, real editor download, WebCodecs
+  animation, FFmpeg fallback with H.264/AAC BT.709 tags, weekly batch preview, approval,
+  immutable snapshots, Web Lock exclusion, paused-upload resume after reload, independent
+  1080p MP4 durations, no duplicate initialization, deterministic animation scrubbing.
+- `tools/f03-upload-check.mjs`: 25 assertions, including link/back guards, download bypass,
+  artifact ownership, unknown-outcome recovery and durable history refresh.
+- `tools/motion-check.mjs`: 7 checks (worker analysis, deterministic seek, 30 fps export,
+  decoded frame difference, BT.709 tags, cancellation).
+- `tools/a11y-check.mjs`: 0 automated violations across home, generate, history, settings,
+  templates, batch and mobile generate; 69 keyboard stops, 10/10 primary controls.
+- `tools/idb-durability-check.mjs` and `text-fit-check.mjs`: pass.
+
+All YouTube traffic in these checks was mocked; no upload or publication was performed. Live
+OAuth/CORS/quota/processing/publication, long-form resource use for custom documents, and
+external-device playback remain open external acceptance items.

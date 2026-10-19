@@ -14,11 +14,52 @@ Single user. No multi-user support. Build order and acceptance criteria live in
 | App | Next.js 16 (App Router) + TypeScript, deployed on Vercel |
 | Styling | Tailwind CSS v4 |
 | Auth | Auth.js v5 (`next-auth@beta`) with Google OAuth, owner-only |
-| Rendering | Mediabunny + WebCodecs, in the browser (M1) |
+| Rendering | Mediabunny + WebCodecs; self-hosted FFmpeg.wasm compatibility encoder |
 | Validation | zod |
-| Storage | No server storage — MP4 held as an in-memory Blob; history and producer defaults in browser local storage |
+| Editor | React Konva manipulation overlay + shared deterministic Canvas renderer |
+| Storage | Local IndexedDB templates/assets/approved jobs/MP4s/history; producer defaults in localStorage; no cloud backup |
 
-## Current state
+## Template Studio and batch automation
+
+- **`/templates`**: start from any preset or a blank 1920×1080 canvas. Use the
+  Elements/Layers, canvas, and Properties panels to edit text, images/logos, shapes,
+  waveform/progress and Orbital layers. Drag, resize, rotate, nudge, group, align,
+  lock/hide/reorder; undo/redo; add fades and eased property keyframes; scrub/play.
+- Save, duplicate, rename, delete, choose a default, or export/import portable
+  `.beatflow.json` packages with embedded images. Branding inherits global or master
+  defaults; cycles are rejected. Variables include `track_name`, `filename`,
+  `producer_name`, `bpm`, `key`, `year`, `purchase_url`, and `message_text`.
+  BPM/key are supplied metadata, never guessed from audio.
+- **`/batch`**: add MP3/WAV files, choose a default/per-track template and artwork,
+  edit titles/descriptions/tags, and preview recurring weekly publication slots in
+  an IANA timezone. Known jobs/history reserve slots; DST gaps/repeats are skipped.
+  Review dates and explicitly approve once, then press **Start approved queue**.
+- Approval atomically stores independent scene, branding, variables and local media
+  snapshots. Rendering/uploading is sequential with cross-tab Web Locks. Pause/reload
+  retains completed MP4s and resumable sessions. Resume queries the existing session
+  before sending bytes; accepted IDs prevent repeat uploads. Unknown outcomes require
+  channel reconciliation or explicit confirmation that no video exists.
+- Export-only batches never upload; enabling the checkbox later cannot authorize an
+  export-only job retroactively. Accepted/processing/scheduled/published/private/
+  unlisted/failed/unknown states are distinct. YouTube, not a browser timer, handles
+  future publication after acceptance. A date less than 10 minutes away is rejected
+  before new upload initialization.
+
+**Limits:** keep the tab open; no closed-browser/background automation, cloud backup,
+external-channel calendar discovery, or multi-user isolation. Browser eviction or clearing
+site data can erase all local work. Export template backups. Static exports keep the
+15-minute cap, animated exports 5 minutes; audio 64 MiB. FFmpeg is a slower compatibility
+path with a 96 MiB staged-frame and 208 MiB output guard, not a promise that long animated
+tracks will fit. WebCodecs remains preferred. No long-form resource claim is made for
+arbitrary custom documents or the compatibility encoder.
+
+Run `npm run build && npm run studio:check` for production Chrome acceptance with synthetic
+audio, actual editor/file controls, real MP4 rendering/readback, and mocked YouTube.
+Use `npm test`, `npm run lint`, `npm run a11y:check`, `npm run motion:check`, and
+`npm run upload:check` for the other regression paths. No check publishes a video.
+Live deployed Google OAuth/CORS/quota/processing/publication acceptance remains separate.
+
+## Earlier milestones (historical evidence; the editor/batch section above supersedes missing-feature notes)
 
 **M0 — pipeline proof.** Owner-only Google sign-in, channel lookup, and a test upload
 that starts a resumable session on the server and PUTs the file from the browser. The

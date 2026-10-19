@@ -138,7 +138,7 @@ try {
       if (await evaluate(expression)) return;
       await sleep(100);
     }
-    throw new Error(`Timed out waiting for: ${expression}`);
+    throw new Error(`Timed out waiting for: ${expression}\nAt ${await evaluate("location.pathname")}: ${(await bodyText()).slice(0, 800)}`);
   };
   const pathname = () => evaluate("location.pathname");
   const bodyText = () => evaluate("document.body.innerText");
@@ -448,8 +448,9 @@ try {
 
   // F02 ownership, same browser: discard a render, keep manual selections.
   await clickText("a", "Studio");
-  await waitFor("location.pathname === '/generate'");
+  await waitFor("location.pathname === '/generate' && document.querySelector('#video-title') !== null");
   await startRender();
+  await waitFor("document.querySelector('#video-title') !== null", 5_000);
   await setInputValue("#video-title", "Kept title");
   await clickText("button", "Use for upload");
   await waitFor(

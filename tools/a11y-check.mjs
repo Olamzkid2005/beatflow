@@ -219,10 +219,12 @@ try {
     { path: "/generate", label: "generate" },
     { path: "/history", label: "history" },
     { path: "/settings", label: "settings" },
+    { path: "/templates", label: "templates", readyText: "Reusable producer branding" },
+    { path: "/batch", label: "batch", readyText: "Durable queue" },
   ];
   const results = [];
   for (const page of pages) {
-    const readyText = page.path === "/history" ? "Accessibility audit release" : undefined;
+    const readyText = page.path === "/history" ? "Accessibility audit release" : page.readyText;
     results.push({ ...page, width: 1280, ...(await audit(page.path, readyText)) });
   }
   await send("Emulation.setDeviceMetricsOverride", {
