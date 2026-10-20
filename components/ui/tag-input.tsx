@@ -12,6 +12,7 @@ export function TagInput({
   placeholder = "Add a tag and press Enter",
   className,
   "aria-describedby": describedBy,
+  "data-tour": dataTour,
 }: {
   id?: string;
   value: string[];
@@ -19,6 +20,7 @@ export function TagInput({
   placeholder?: string;
   className?: string;
   "aria-describedby"?: string;
+  "data-tour"?: string;
 }) {
   const [draft, setDraft] = useState("");
 
@@ -49,7 +51,7 @@ export function TagInput({
       {value.map((tag) => (
         <span
           key={tag}
-          className="inline-flex items-center gap-1 rounded-lg bg-surface-container-high px-2 py-1 text-xs text-on-surface"
+          className="inline-flex max-w-full items-center gap-1 break-all rounded-lg bg-surface-container-high px-2 py-1 text-xs text-on-surface"
         >
           {tag}
           <button
@@ -64,6 +66,7 @@ export function TagInput({
       ))}
       <input
         id={id}
+        data-tour={dataTour}
         value={draft}
         onChange={(event) => {
           const next = event.currentTarget.value;

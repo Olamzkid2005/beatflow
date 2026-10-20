@@ -43,6 +43,7 @@ test("valid fields survive and invalid ones are dropped one by one", () => {
     timezone: "",
     defaultTags: [],
     descriptionTemplate: "From {{producer_name}}",
+    defaultVisibility: "unlisted",
   });
 
   const partial = fakeStorage({
@@ -53,21 +54,30 @@ test("valid fields survive and invalid ones are dropped one by one", () => {
     timezone: "Africa/Lagos",
     defaultTags: ["type beat"],
     descriptionTemplate: "",
+    defaultVisibility: "unlisted",
   });
 });
 
 test("writing replaces the stored value and reset clears it", () => {
   const storage = fakeStorage();
-  writeSettings({ producerName: "Nova", timezone: "UTC", defaultTags: ["beat"], descriptionTemplate: "hi" }, storage);
+  writeSettings({ producerName: "Nova", timezone: "UTC", defaultTags: ["beat"], descriptionTemplate: "hi", defaultVisibility: "public" }, storage);
   assert.deepEqual(readSettings(storage), {
     producerName: "Nova",
     timezone: "UTC",
     defaultTags: ["beat"],
     descriptionTemplate: "hi",
+    defaultVisibility: "public",
   });
   resetSettings(storage);
   assert.equal(storage.getItem(KEY), null);
   assert.deepEqual(readSettings(storage), { ...DEFAULT_SETTINGS, defaultTags: [] });
+});
+
+test("legacy visibility is safe by default and public preference persists", () => {
+  const storage = fakeStorage({ [KEY]: JSON.stringify({ defaultVisibility: "invalid" }) });
+  assert.equal(readSettings(storage).defaultVisibility, "unlisted");
+  writeSettings({ ...DEFAULT_SETTINGS, defaultTags: [], defaultVisibility: "public" }, storage);
+  assert.equal(readSettings(storage).defaultVisibility, "public");
 });
 
 test("a browser that refuses to store raises so the form can report it", () => {

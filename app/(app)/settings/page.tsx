@@ -168,6 +168,7 @@ function SettingsForm() {
               >
                 <Input
                   id="producer-name"
+                  data-tour="producer-name"
                   value={settings.producerName}
                   onChange={(event) => update("producerName", event.target.value)}
                   placeholder="Your producer name"
@@ -223,6 +224,22 @@ function SettingsForm() {
                   onChange={(tags) => update("defaultTags", tags)}
                   placeholder="beat, instrumental, type beat…"
                 />
+              </Field>
+
+              <Field
+                label="Preferred immediate visibility"
+                htmlFor="default-visibility"
+                hint="Scheduled uploads remain private until their publish time"
+              >
+                <select
+                  id="default-visibility"
+                  className="h-11 w-full rounded-xl border border-outline/60 bg-surface-container-lowest px-3 text-sm text-on-surface"
+                  value={settings.defaultVisibility}
+                  onChange={(event) => update("defaultVisibility", event.target.value as ProducerSettings["defaultVisibility"])}
+                >
+                  <option value="unlisted">Unlisted — recommended for review</option>
+                  <option value="public">Public immediately</option>
+                </select>
               </Field>
 
               <Field
@@ -293,6 +310,31 @@ function SettingsForm() {
               Go to upload desk
               <Icon name="arrowRight" className="h-3.5 w-3.5" />
             </Link>
+          </Card>
+
+          <Card className="p-4">
+            <div className="flex items-center gap-2 text-primary">
+              <Icon name="info" className="h-4 w-4" />
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em]">Walkthrough</p>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-on-surface-variant">
+              Replay the hands-on tour of rendering, descriptions, schedules, batches, and saved
+              designs. It highlights the real controls and waits while you try them.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-4 w-full"
+              onClick={() =>
+                window.dispatchEvent(
+                  new CustomEvent("beatflow:onboarding", { detail: { restart: true } }),
+                )
+              }
+            >
+              <Icon name="spark" className="h-3.5 w-3.5" />
+              Replay walkthrough
+            </Button>
           </Card>
         </aside>
       </div>

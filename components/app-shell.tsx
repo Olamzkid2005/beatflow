@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { signOutOfGoogle } from "@/app/actions";
 import { NavLinks } from "@/components/nav-links";
+import { OnboardingExperience } from "@/components/onboarding-experience";
 import { Icon } from "@/components/ui/icon";
 import { buttonClass, StatusDot } from "@/components/ui/primitives";
 
@@ -115,6 +116,7 @@ export function AppShell({ user, children }: { user: AppShellUser; children: Rea
       </div>
 
       <NavLinks variant="mobile" />
+      <OnboardingExperience />
     </div>
   );
 }

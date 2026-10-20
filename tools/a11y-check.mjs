@@ -187,6 +187,12 @@ try {
     ]),
   )})`);
 
+  // The workspace audit represents a returning owner: the first-run dialog has
+  // already been completed. Its own semantics are covered by onboarding:check.
+  await evaluate(
+    `localStorage.setItem("beatflow.onboarding.v1", JSON.stringify({ setupComplete: true, tourComplete: true, tourStep: 0 }))`,
+  );
+
   const audit = async (path, readyText) => {
     await goto(path);
     if (readyText) {

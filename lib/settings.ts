@@ -3,6 +3,7 @@ export type ProducerSettings = {
   timezone: string;
   defaultTags: string[];
   descriptionTemplate: string;
+  defaultVisibility: "unlisted" | "public";
 };
 
 const STORAGE_KEY = "beatflow.producer-settings.v1";
@@ -12,6 +13,7 @@ export const DEFAULT_SETTINGS: ProducerSettings = {
   timezone: "",
   defaultTags: [],
   descriptionTemplate: "",
+  defaultVisibility: "unlisted",
 };
 
 /** Minimal storage contract so Node tests can drive this without a browser. */
@@ -44,6 +46,7 @@ export function readSettings(storage?: SettingsStorage | null): ProducerSettings
           : [],
       descriptionTemplate:
         typeof value.descriptionTemplate === "string" ? value.descriptionTemplate : "",
+      defaultVisibility: value.defaultVisibility === "public" ? "public" : "unlisted",
     };
   } catch {
     return { ...DEFAULT_SETTINGS, defaultTags: [] };
@@ -70,6 +73,10 @@ export function resetSettings(storage?: SettingsStorage | null): void {
   }
   store.removeItem(STORAGE_KEY);
   announce();
+}
+
+export function settingsStorageKey(): string {
+  return STORAGE_KEY;
 }
 
 function announce(): void {

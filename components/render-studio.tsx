@@ -724,6 +724,7 @@ export function RenderStudio({
           <div
             role="radiogroup"
             aria-label="Template"
+            data-tour="render-template"
             className="flex flex-col gap-1.5"
           >
             <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-on-surface-variant">
@@ -978,6 +979,7 @@ export function RenderStudio({
 
           <div className="flex flex-wrap items-center gap-2">
             <Button
+              data-tour="render-button"
               onClick={handleRender}
               disabled={
                 !audioFile ||

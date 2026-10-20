@@ -188,6 +188,7 @@ npm run idb:check     # durability, migration, and a real two-tab replay
 npm run fps:check     # 30 fps encode/readback and abort
 npm run motion:check  # Orbital preview reaction, 30 fps export, BT.709 tags, cancel
 npm run upload:check  # production-browser upload and guard flow
+npm run onboarding:check  # setup dialog, guided tour, practice probes, pause/replay
 ```
 
 Use Node **24.7+** (CI uses Node 24); native tests load real TypeScript sources using

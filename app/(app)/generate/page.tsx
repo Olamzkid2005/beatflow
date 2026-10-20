@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { RenderStudio } from "@/components/render-studio";
 import { Icon } from "@/components/ui/icon";
@@ -118,7 +118,7 @@ function UploadStudio() {
 
   // UploadStudio only mounts after the client-only gate in GeneratePage, so
   // reading local storage in these initializers cannot run during SSR.
-  const [defaults] = useState(readSettings);
+  const [defaults, setDefaults] = useState(readSettings);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState(() => defaults.descriptionTemplate);
   const [tags, setTags] = useState<string[]>(() => [...defaults.defaultTags]);
@@ -139,7 +139,7 @@ function UploadStudio() {
   const file = selection?.file ?? null;
   const [chunkSize, setChunkSize] = useState(DEFAULT_CHUNK_SIZE);
   const [dragging, setDragging] = useState(false);
-  const [immediatePrivacy, setImmediatePrivacy] = useState<"unlisted" | "public">("unlisted");
+  const [immediatePrivacy, setImmediatePrivacy] = useState<"unlisted" | "public">(() => defaults.defaultVisibility);
 
   const {
     busy,
@@ -156,7 +156,23 @@ function UploadStudio() {
     cancelUpload,
   } = useUploadJob();
   const titleTouchedRef = useRef(false);
+  const metadataTouchedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Settings can be saved while this page stays mounted (the first-run dialog
+  // overlays it). Refresh untouched defaults so the tour and the form agree.
+  useEffect(() => {
+    const sync = () => {
+      const next = readSettings();
+      setDefaults(next);
+      if (metadataTouchedRef.current) return;
+      setDescription(next.descriptionTemplate);
+      setTags([...next.defaultTags]);
+      setImmediatePrivacy(next.defaultVisibility);
+    };
+    window.addEventListener("beatflow:settings", sync);
+    return () => window.removeEventListener("beatflow:settings", sync);
+  }, []);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -303,6 +319,7 @@ function UploadStudio() {
                 className="peer sr-only"
               />
               <label
+                data-tour="video-file"
                 htmlFor="video-file"
                 onDragOver={(event) => {
                   event.preventDefault();
@@ -621,9 +638,13 @@ function UploadStudio() {
                   hint={`${descriptionBytes}/5000 bytes`}
                 >
                   <Textarea
+                    data-tour="video-description"
                     id="video-description"
                     value={description}
-                    onChange={(event) => setDescription(event.target.value)}
+                    onChange={(event) => {
+                      metadataTouchedRef.current = true;
+                      setDescription(event.target.value);
+                    }}
                     rows={4}
                     placeholder="Tracklist, credits, links…"
                   />
@@ -631,16 +652,20 @@ function UploadStudio() {
 
                 <Field label="Tags" htmlFor="video-tags" hint="Enter to add">
                   <TagInput
+                    data-tour="video-tags"
                     id="video-tags"
                     value={tags}
-                    onChange={setTags}
+                    onChange={(next) => {
+                      metadataTouchedRef.current = true;
+                      setTags(next);
+                    }}
                     placeholder="beat, instrumental, type beat…"
                   />
                 </Field>
               </div>
             </Card>
 
-            <Card className="p-4 sm:p-5">
+            <Card data-tour="publishing-schedule" className="p-4 sm:p-5">
               <div className="flex items-center gap-2">
                 <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
                   <Icon name="calendar" className="h-4 w-4" />
@@ -662,6 +687,7 @@ function UploadStudio() {
                 >
                   <Input
                     id="video-schedule"
+                    data-tour="video-schedule"
                     type="datetime-local"
                     value={schedule}
                     onChange={(event) => {
@@ -704,7 +730,10 @@ function UploadStudio() {
                           size="sm"
                           variant={immediatePrivacy === value ? "secondary" : "ghost"}
                           aria-pressed={immediatePrivacy === value}
-                          onClick={() => setImmediatePrivacy(value)}
+                          onClick={() => {
+                            metadataTouchedRef.current = true;
+                            setImmediatePrivacy(value);
+                          }}
                         >
                           {value === "public" ? "Public immediately" : "Unlisted immediately"}
                         </Button>
@@ -773,7 +802,7 @@ function UploadStudio() {
                   Cancel upload
                 </Button>
               ) : (
-                <Button type="submit" size="lg" className="flex-1 sm:flex-none">
+                <Button data-tour="upload-submit" type="submit" size="lg" className="flex-1 sm:flex-none">
                   <Icon name="upload" className="h-4 w-4" />
                   Start upload
                 </Button>
