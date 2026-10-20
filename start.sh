@@ -34,16 +34,22 @@ warn() {
   echo "WARNING: $1" >&2
 }
 
-# Every value in .env.local is required for sign-in: the Google OAuth client,
-# the session secret, and the one account allowed to use the tool. Next.js
-# reads the file itself, so this only reports what is missing. The server is
-# still started — the editor UI loads, and sign-in fails until the values are
-# filled in — because blocking startup here would hide the very page that
-# explains the setup.
+# Every value is required for sign-in: the Google OAuth client, the session
+# secret, and the one account allowed to use the tool. Next.js loads
+# `.env.local` and `.env`, with the former winning, so either file works; this
+# only reports on the one that is present. The server is still started — the
+# editor UI loads, and sign-in fails until the values are filled in — because
+# blocking startup here would hide the very page that explains the setup.
 check_env_file() {
-  local file=".env.local" key value missing=()
-  if [ ! -f "$file" ]; then
-    warn "$file is missing (copy .env.example and fill it in); sign-in will fail."
+  local file="" candidate key value missing=()
+  for candidate in .env.local .env; do
+    if [ -f "$candidate" ]; then
+      file="$candidate"
+      break
+    fi
+  done
+  if [ -z "$file" ]; then
+    warn "no .env.local or .env file (copy .env.example and fill it in); sign-in will fail."
     return 0
   fi
   for key in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET AUTH_SECRET OWNER_EMAIL; do

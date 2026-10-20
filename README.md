@@ -171,7 +171,7 @@ npm run dev
 
 To start from the desktop, double-click the `BeatFlow` shortcut (or
 `start-windows.cmd` in this folder). It runs `start.sh`, which checks Node 24.7+,
-`node_modules`, and the `.env.local` values, then serves
+`node_modules`, and the `.env.local`/`.env` values, then serves
 `http://localhost:3000` on loopback only; closing the window stops the server.
 
 Local checks that need Chrome and a production build:
