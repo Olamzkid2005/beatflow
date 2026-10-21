@@ -9,6 +9,7 @@ import {listJobs,approveBatch,recoverInterruptedJobs,runJob,retryJob,saveJob,ref
 import {DEFAULT_BRANDING,type StudioDocument,type Branding,isMovingDocument,trackSnapshot,resolveImageBindings} from '@/lib/studio/document';
 import {readHistory} from '@/lib/history';
 import type {AudioFeatureTable} from '@/lib/renderer/audio-features';
+import {fillDescriptionTokens} from '@/lib/release-templates';
 import {readSettings} from '@/lib/settings';
 import {browserTimeZone,toDateTimeLocalValue,toUtcIso8601} from '@/lib/time';
 import {assertAudioBudget,resolveTrackName} from '@/lib/renderer/audio';
@@ -26,7 +27,7 @@ export default function BatchStudio(){
  const patch=(id:string,update:Partial<TrackDraft>)=>setTracks(rows=>rows.map(t=>t.id===id?{...t,...update}:t));
  const invalidateDates=()=>setTracks(rows=>rows.map(t=>({...t,publishAt:''})));
  const addFiles=async(files:FileList|null)=>{if(!files)return;const defaults=readSettings();const entries:TrackDraft[]=[];
- for(const file of Array.from(files)){assertAudioBudget(file.size,null);if(!/\.(mp3|wav)$/i.test(file.name))throw new Error('Choose MP3 or WAV audio.');entries.push({id:crypto.randomUUID(),file,templateId,title:resolveTrackName('',file.name),bpm:'',key:'',purchaseUrl:brand.purchaseUrl,publishAt:'',description:defaults.descriptionTemplate,tags:defaults.defaultTags,backgroundId});}
+ for(const file of Array.from(files)){assertAudioBudget(file.size,null);if(!/\.(mp3|wav)$/i.test(file.name))throw new Error('Choose MP3 or WAV audio.');const title=resolveTrackName('',file.name);entries.push({id:crypto.randomUUID(),file,templateId,title,bpm:'',key:'',purchaseUrl:brand.purchaseUrl,publishAt:'',description:fillDescriptionTokens(defaults.descriptionTemplate,{track_name:title,producer_name:defaults.producerName}),tags:defaults.defaultTags,backgroundId});}
  setTracks(rows=>[...rows,...entries]);};
  const generateDates=()=>execute(async()=>{const history=await readHistory();const occupied=[...jobs.filter(j=>!['cancelled','failed'].includes(j.state)).flatMap(j=>j.publishAt?[j.publishAt]:[]),...history.flatMap(h=>h.publishAt?[h.publishAt]:[])];const values=allocateSlots(schedule,tracks.length,occupied);await putRecord('preference','weekly-schedule',scheduleSchema.parse(schedule));setTracks(rows=>rows.map((t,i)=>({...t,publishAt:values[i]})));setNotice('Calendar preview updated. Review every date before approving.');});
  const approve=()=>execute(async()=>{if(!tracks.length)throw new Error('Add beats first.');if(tracks.some(t=>!t.publishAt))throw new Error('Generate and review the schedule preview first.');for(const t of tracks){if(t.bpm&&(!Number.isFinite(Number(t.bpm))||Number(t.bpm)<20||Number(t.bpm)>300))throw new Error('BPM must be 20–300 or blank.');}

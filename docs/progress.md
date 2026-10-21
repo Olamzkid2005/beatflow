@@ -351,3 +351,25 @@ measurable locally, so they were measured instead of deferred.
   duration from the downloaded bytes (only the 6 s export in `motion:check` is probed that
   way); and 19.6 minutes is a wall-clock figure for an offline export — nothing in the UI
   promises a faster one.
+
+## Session: preview iteration and release templates (20 October 2026)
+
+- Re-rendering is no longer destructive: the previous MP4, its object URL, and the upload
+  handoff survive until a new render succeeds, so a failed or cancelled attempt costs only
+  time. A cached decoded buffer/feature table is still reused for Orbital.
+- The studio compares a signature of the current inputs with the last successful render and
+  labels the file "matches preview" or "previous settings", with a notice that names the
+  render button. The old confirmation prompt is removed.
+- Added `lib/release-templates.ts` with a type-beat description (license, contact, hashtags,
+  tag dump) and `fillDescriptionTokens`; Settings can insert it and the upload desk fills
+  `{{track_name}}`, `{{producer_name}}`, `{{year}}`, `{{key}}` and `{{bpm}}`, leaving
+  bracketed contact details and `[KEY]`/`[BPM]` visible when unknown.
+- Added starting tag suggestions (`lib/tag-suggestions.ts`): grouped lists, case-insensitive
+  duplicate detection, comma-text helpers, and a native-select picker in Settings and the
+  onboarding metadata step. Free text remains unrestricted.
+- Verified: 156 tests, `tsc --noEmit`, ESLint, production build, new `rerender:check`
+  (stale badge, old file playable mid-render, no dialog, new file adopted), `onboarding:check`
+  (template picker + desk fill), `upload:check` 25/25, and `a11y:check` with 0 automated
+  violations.
+- Not covered: a re-render of a 5-minute Orbital track (the memory check still renders once
+  per cycle), and the two-blob peak during a re-render is inferred rather than measured.

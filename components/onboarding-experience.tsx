@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 
 import { Icon } from "@/components/ui/icon";
 import { Button, Card, cn, Input, Textarea } from "@/components/ui/primitives";
+import { TagSuggestionPicker } from "@/components/ui/tag-suggestions";
 import {
   readOnboardingProgress,
   writeOnboardingProgress,
@@ -21,6 +22,7 @@ import {
   type PracticeProbe,
 } from "@/lib/onboarding-tour";
 import { readSettings, writeSettings, type ProducerSettings } from "@/lib/settings";
+import { addTagToText, parseTagText } from "@/lib/tag-suggestions";
 import { browserTimeZone } from "@/lib/time";
 
 type Practice = PracticeProbe & {
@@ -903,17 +905,26 @@ export function OnboardingExperience() {
                         personalised before it leaves the browser.
                       </p>
                     </div>
-                    <label className="flex flex-col gap-1.5 text-xs font-medium text-on-surface-variant">
-                      Default tags · comma separated
+                    <div className="flex flex-col gap-1.5 text-xs font-medium text-on-surface-variant">
+                      <label htmlFor="onboarding-tags">Default tags · comma separated</label>
                       <Input
+                        id="onboarding-tags"
                         value={tagsText}
                         placeholder="afrobeats, instrumental, type beat"
                         onChange={(event) => setTagsText(event.target.value)}
                       />
+                      <TagSuggestionPicker
+                        id="onboarding-tag-suggestions"
+                        selected={parseTagText(tagsText)}
+                        onSelect={(tag) =>
+                          setTagsText((current) => addTagToText(current, tag))
+                        }
+                      />
                       <span className="text-[11px] font-normal text-outline">
-                        Use descriptive tags you actually want on your releases.
+                        Use descriptive tags you actually want on your releases. Pick a suggestion
+                        or type your own; duplicates are ignored.
                       </span>
-                    </label>
+                    </div>
                     <label className="flex flex-col gap-1.5 text-xs font-medium text-on-surface-variant">
                       Starting description
                       <Textarea

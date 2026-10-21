@@ -187,6 +187,21 @@ try {
       el.dispatchEvent(new Event("change", { bubbles: true }));
       return true;
     })()`);
+  const selectOption = (selector, value) =>
+    evaluate(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      if (!(el instanceof HTMLSelectElement)) return false;
+      const option = [...el.options].find((node) => node.value === ${JSON.stringify(value)});
+      if (!option || option.disabled) return false;
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        el,
+        ${JSON.stringify(value)},
+      );
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()`);
+  const fieldValue = (selector) =>
+    evaluate(`document.querySelector(${JSON.stringify(selector)})?.value ?? null`);
   const pressTab = async (times, shift = false) => {
     for (let index = 0; index < times; index++) {
       const modifiers = shift ? 8 : 0;
@@ -307,6 +322,38 @@ try {
   );
   assert.equal(await clickText("Next", setupScope), true);
   await waitFor(`document.body.innerText.includes("Choose your starting metadata.")`);
+
+  // The suggestion dropdown writes into the comma-separated field.
+  assert.equal(
+    await selectOption("#onboarding-tag-suggestions", "afrobeats"),
+    true,
+    "Tag suggestion dropdown missing",
+  );
+  await waitFor(`document.querySelector("#onboarding-tags")?.value === "afrobeats"`);
+  assert.equal(await selectOption("#onboarding-tag-suggestions", "instrumental"), true);
+  await waitFor(
+    `document.querySelector("#onboarding-tags")?.value === "afrobeats, instrumental"`,
+  );
+  assert.equal(
+    await selectOption("#onboarding-tag-suggestions", "afrobeats"),
+    false,
+    "An already-picked tag must not be addable twice",
+  );
+  assert.equal(
+    await fieldValue("#onboarding-tags"),
+    "afrobeats, instrumental",
+    "Re-picking a tag changed the field",
+  );
+  assert.equal(
+    await evaluate(
+      `document.querySelector("#onboarding-tag-suggestions option[value='afrobeats']")?.disabled === true`,
+    ),
+    true,
+    "Picked suggestion was not marked as added",
+  );
+  await assertInside(setupScope, "Setup metadata step");
+  await assertAccessible("Setup metadata step");
+
   assert.equal(
     await setField(
       `${setupScope} textarea`,
@@ -330,6 +377,11 @@ try {
   const stored = JSON.parse(await evaluate(`localStorage.getItem("beatflow.onboarding.v1")`));
   assert.equal(stored.setupComplete, true);
   assert.equal(stored.tourComplete, false);
+  assert.deepEqual(
+    JSON.parse(await evaluate(`localStorage.getItem("beatflow.producer-settings.v1")`)).defaultTags,
+    ["afrobeats", "instrumental"],
+    "Suggested tags were not saved as default tags",
+  );
 
   await nextStep("Choose your visual signature");
   await assertInside(tourScope, "Tour card");
@@ -470,8 +522,52 @@ try {
     await evaluate(`document.querySelector("#producer-name")?.value`),
     "Tour Verification Studio",
   );
+
+  // The same dropdown feeds the tag chips on the settings form.
+  assert.equal(
+    await selectOption("#default-tag-suggestions", "trap"),
+    true,
+    "Settings tag suggestion dropdown missing",
+  );
+  await waitFor(`document.querySelector("[aria-label='Remove trap']") !== null`);
+  assert.equal(await clickText("Save settings"), true, "Save settings button missing");
+  await waitFor(`document.body.innerText.includes("Saved locally")`);
+  assert.deepEqual(
+    JSON.parse(await evaluate(`localStorage.getItem("beatflow.producer-settings.v1")`))
+      .defaultTags,
+    ["afrobeats", "instrumental", "trap"],
+    "Settings picker did not persist the selected tag",
+  );
+  // The description template inserts a release layout with fill-in markers.
+  // Clearing first keeps the replace confirmation out of this check.
+  assert.equal(await setField("#description-template", ""), true);
+  assert.equal(
+    await selectOption("#description-template-preset", "type-beat-license"),
+    true,
+    "Description template picker missing",
+  );
+  await waitFor(
+    `document.querySelector("#description-template")?.value.includes("{{track_name}}")`,
+  );
+  assert.equal(
+    await evaluate(`document.querySelector("#description-template")?.value.includes("Tags (Ignore)")`),
+    true,
+    "The type-beat template did not load into the description field",
+  );
+  assert.equal(await clickText("Save settings"), true, "Save settings button missing");
+  await waitFor(`document.body.innerText.includes("Saved locally")`);
+
   await goto("/generate");
   await waitFor(`document.body.innerText.includes("Drop your rendered MP4 here")`);
+  const deskDescription = await evaluate(`document.querySelector("#video-description")?.value ?? ""`);
+  assert.equal(
+    deskDescription.includes("{{track_name}}"),
+    false,
+    "The upload desk did not fill the template tokens",
+  );
+  assert.equal(deskDescription.includes("produced by Tour Verification Studio."), true);
+  assert.equal(deskDescription.includes("[TRACK NAME]"), true);
+  assert.equal(deskDescription.includes("[BPM]") && deskDescription.includes("[KEY]"), true);
 
   assert.deepEqual(pageErrors, []);
   console.log("Onboarding check passed: setup, spotlight, practice probes, hand-off guard, pause/resume, replay.");

@@ -11,10 +11,12 @@ import {
   Card,
   Field,
   Input,
+  Select,
   StatusDot,
   Textarea,
 } from "@/components/ui/primitives";
 import { TagInput } from "@/components/ui/tag-input";
+import { TagSuggestionPicker } from "@/components/ui/tag-suggestions";
 import {
   DEFAULT_SETTINGS,
   readSettings,
@@ -22,6 +24,11 @@ import {
   writeSettings,
   type ProducerSettings,
 } from "@/lib/settings";
+import {
+  DESCRIPTION_TEMPLATES,
+  DESCRIPTION_TOKEN_HELP,
+} from "@/lib/release-templates";
+import { mergeTag } from "@/lib/tag-suggestions";
 
 const subscribe = () => () => {};
 
@@ -217,14 +224,21 @@ function SettingsForm() {
             </div>
 
             <div className="mt-4 flex flex-col gap-4">
-              <Field label="Default tags" htmlFor="default-tags" hint="Enter to add">
-                <TagInput
-                  id="default-tags"
-                  value={settings.defaultTags}
-                  onChange={(tags) => update("defaultTags", tags)}
-                  placeholder="beat, instrumental, type beat…"
+              <div className="flex flex-col gap-2">
+                <Field label="Default tags" htmlFor="default-tags" hint="Enter to add">
+                  <TagInput
+                    id="default-tags"
+                    value={settings.defaultTags}
+                    onChange={(tags) => update("defaultTags", tags)}
+                    placeholder="beat, instrumental, type beat…"
+                  />
+                </Field>
+                <TagSuggestionPicker
+                  id="default-tag-suggestions"
+                  selected={settings.defaultTags}
+                  onSelect={(tag) => update("defaultTags", mergeTag(settings.defaultTags, tag))}
                 />
-              </Field>
+              </div>
 
               <Field
                 label="Preferred immediate visibility"
@@ -255,6 +269,44 @@ function SettingsForm() {
                   placeholder="Credits, links, or a reusable description…"
                 />
               </Field>
+
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-on-surface-variant">
+                  Start from a template
+                </span>
+                <Select
+                  id="description-template-preset"
+                  aria-label="Insert a description template"
+                  value=""
+                  onChange={(event) => {
+                    const template = DESCRIPTION_TEMPLATES.find(
+                      (item) => item.id === event.target.value,
+                    );
+                    if (!template) return;
+                    if (
+                      settings.descriptionTemplate.trim() &&
+                      !window.confirm(
+                        "Replace the current starting description with this template?",
+                      )
+                    ) {
+                      return;
+                    }
+                    update("descriptionTemplate", template.body);
+                  }}
+                >
+                  <option value="">Insert a template…</option>
+                  {DESCRIPTION_TEMPLATES.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </Select>
+                <span className="text-[11px] leading-5 text-outline">
+                  Filled automatically on new uploads:{" "}
+                  {DESCRIPTION_TOKEN_HELP.map((entry) => entry.token).join(", ")}. Leave the
+                  bracketed contact details and replace them once.
+                </span>
+              </div>
             </div>
           </Card>
 

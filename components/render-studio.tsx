@@ -22,6 +22,11 @@ import type { GraphicSettings } from "@/lib/renderer/graphics";
 import { ORBITAL_BOUNDS, ORBITAL_DEFAULTS } from "@/lib/renderer/graphics";
 import type { PreparedScene } from "@/lib/renderer/scene";
 import type { RenderCapabilities, RenderProgress } from "@/lib/renderer";
+import {
+  fileIdentity,
+  isRenderStale,
+  renderSignature,
+} from "@/lib/render-signature";
 import { DEFAULT_TEMPLATE_ID, ORBITAL_TEMPLATE_ID, TEMPLATE_PRESETS, MUSICAL_KEYS, buildOrbitalTemplate } from "@/lib/templates";
 import { useBeforeUnloadWarning } from "@/lib/use-before-unload";
 import { useNavigationGuard } from "@/lib/use-navigation-guard";
@@ -134,7 +139,13 @@ export function RenderStudio({
 }: {
   producerName: string;
   uploading: boolean;
-  onRenderedFile: (file: File, artifactId: string, title: string) => void;
+  onRenderedFile: (
+    file: File,
+    artifactId: string,
+    title: string,
+    /** Musical details the upload desk can use in its description template. */
+    details: { bpm?: string; key?: string },
+  ) => void;
   onReleaseArtifact: (artifactId: string) => void;
   onSourceChange: (title: string) => void;
 }) {
@@ -145,6 +156,8 @@ export function RenderStudio({
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState<RenderProgress | null>(null);
   const [result, setResult] = useState<RenderResult | null>(null);
+  /** Signature of the inputs the finished MP4 was encoded from. */
+  const [renderedSignature, setRenderedSignature] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
@@ -197,6 +210,38 @@ export function RenderStudio({
     (Number.isFinite(Number(bpm)) && Number(bpm) >= 20 && Number(bpm) <= 300);
   const bpmValue = bpmValid && bpm.trim() !== "" ? bpm.trim() : undefined;
   const needsImage = template.layers.some((layer) => layer.type === "image");
+
+  // Everything that changes the encoded video. Comparing it with the signature
+  // captured at the last successful render tells the user whether the MP4 in
+  // hand still matches the preview, without ever discarding that MP4.
+  const currentSignature = useMemo(
+    () =>
+      renderSignature({
+        templateId: preset.id,
+        appearance: JSON.stringify(graphicSettings),
+        producerName,
+        trackName: audioFile ? resolveTrackName(trackName, audioFile.name) : "",
+        message: message.trim(),
+        bpm: bpmValue ?? null,
+        key: key || null,
+        audio: fileIdentity(audioFile),
+        image: fileIdentity(imageFile),
+        outputProfile: animated ? "animated" : "static",
+      }),
+    [
+      preset.id,
+      graphicSettings,
+      producerName,
+      trackName,
+      audioFile,
+      message,
+      bpmValue,
+      key,
+      imageFile,
+      animated,
+    ],
+  );
+  const stale = isRenderStale(renderedSignature, currentSignature);
 
   // Capability check at startup (spec section 5 step 1).
   useEffect(() => {
@@ -446,6 +491,7 @@ export function RenderStudio({
     resultUrlRef.current = null;
     resultBlobRef.current = null;
     setResult(null);
+    setRenderedSignature(null);
     setPhase("idle");
   }
 
@@ -488,17 +534,10 @@ export function RenderStudio({
       );
       return;
     }
-    // Hold on to a finished render until the user agrees to replace it.
-    if (result && !window.confirm("Start a new render and release the current MP4?")) return;
-
-    // The parent's upload selection must not outlive the render it came from.
-    if (result) onReleaseArtifact(result.artifactId);
-
-    // A new render releases the previous Blob and URL (spec section 5 cleanup).
-    if (resultUrlRef.current) URL.revokeObjectURL(resultUrlRef.current);
-    resultUrlRef.current = null;
-    resultBlobRef.current = null;
-    setResult(null);
+    // A re-render keeps the finished MP4 until the new file is ready, so a
+    // failed or cancelled attempt never costs the user their previous render.
+    const previous = result;
+    const signature = currentSignature;
     setError(null);
     setProgress({ stage: "capabilities", pct: 0 });
     setPhase("rendering");
@@ -535,6 +574,7 @@ export function RenderStudio({
       controller.signal.throwIfAborted();
 
       const url = URL.createObjectURL(blob);
+      const previousUrl = resultUrlRef.current;
       resultUrlRef.current = url;
       resultBlobRef.current = blob;
       setResult({
@@ -544,8 +584,15 @@ export function RenderStudio({
         artifactId: crypto.randomUUID(),
         title: resolvedName,
       });
+      setRenderedSignature(signature);
       setProgress(null);
       setPhase("done");
+      if (previous) {
+        // The upload desk must not keep pointing at a superseded render.
+        onReleaseArtifact(previous.artifactId);
+        // Let the <video> swap to the new source before releasing the old URL.
+        if (previousUrl) window.setTimeout(() => URL.revokeObjectURL(previousUrl), 1_000);
+      }
     } catch (renderError) {
       if (controller.signal.aborted) {
         setPhase("cancelled");
@@ -562,7 +609,10 @@ export function RenderStudio({
   function handleUseForUpload() {
     const blob = resultBlobRef.current;
     if (uploading || !blob || !result) return;
-    onRenderedFile(new File([blob], result.name, { type: "video/mp4" }), result.artifactId, result.title);
+    onRenderedFile(new File([blob], result.name, { type: "video/mp4" }), result.artifactId, result.title, {
+      bpm: bpmValue,
+      key: key || undefined,
+    });
   }
 
   const rendering = phase === "rendering";
@@ -611,6 +661,16 @@ export function RenderStudio({
             Preview · {template.name} template · {template.canvas.width} × {template.canvas.height}
             {animated ? " · 30 fps" : ""}
           </p>
+          {stale ? (
+            <p
+              role="status"
+              className="rounded-lg border border-tertiary/35 bg-tertiary-container/10 px-3 py-2 text-xs leading-5 text-on-surface-variant"
+            >
+              <span className="font-medium text-tertiary">Preview updated.</span> The MP4 below
+              still shows your last render. Press {animated ? "Render MP4 · 30 fps" : "Render MP4"} to
+              replace it — the current file stays available until the new one finishes.
+            </p>
+          ) : null}
           {animated && analysisState.status !== "ready" ? (
             <p className="rounded-lg border border-outline-variant/70 bg-surface-container-lowest/70 px-3 py-2 text-xs leading-5 text-on-surface-variant">
               {analysisState.status === "analyzing"
@@ -667,6 +727,11 @@ export function RenderStudio({
                 value={progress.pct * 100}
                 label={stageLabel(progress.stage)}
               />
+              {result ? (
+                <p className="mt-2 text-xs leading-5 text-on-surface-variant">
+                  Your current MP4 stays available until this render replaces it.
+                </p>
+              ) : null}
             </div>
           ) : null}
 
@@ -675,15 +740,18 @@ export function RenderStudio({
               <p className="text-sm font-medium text-error">Render issue</p>
               <p className="mt-1 text-xs leading-5 text-on-surface-variant">{error}</p>
               <p className="mt-1 text-xs leading-5 text-outline">
-                Rendering uploads nothing and changes no files, so it is always safe to try
-                again with different inputs.
+                {result
+                  ? "Your previous MP4 is unchanged and still ready to download or upload."
+                  : "Rendering uploads nothing and changes no files, so it is always safe to try again with different inputs."}
               </p>
             </div>
           ) : null}
 
           {phase === "cancelled" && !error ? (
             <div className="rounded-xl border border-outline-variant/70 bg-surface-container-lowest/70 p-4 text-sm text-on-surface-variant">
-              Render cancelled. Nothing was kept — adjust the inputs and render again.
+              {result
+                ? "Render cancelled. Your previous MP4 is unchanged — adjust the inputs and render again when you are ready."
+                : "Render cancelled. Nothing was kept — adjust the inputs and render again."}
             </div>
           ) : null}
 
@@ -712,6 +780,9 @@ export function RenderStudio({
                   <Icon name="trash" className="h-3.5 w-3.5" />
                   Discard
                 </Button>
+                <Badge tone={stale ? "tertiary" : "success"}>
+                  {stale ? "MP4 · previous settings" : "MP4 · matches preview"}
+                </Badge>
                 <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-outline">
                   {result.name} · {formatBytes(result.bytes)}
                 </span>
@@ -1024,8 +1095,8 @@ export function RenderStudio({
 
           <p className="text-xs leading-5 text-on-surface-variant">
             {animated
-              ? "Orbital renders at 30 fps and stays inside a 5-minute limit. The MP4 is held in memory until the next render; nothing is uploaded by rendering."
-              : "The MP4 stays in memory until the next render. Cancel releases it; nothing is uploaded by rendering."}
+              ? "Orbital renders at 30 fps and stays inside a 5-minute limit. Editing updates this preview immediately; the MP4 changes only when you render, and a re-render keeps the current file until the new one is ready."
+              : "Editing updates this preview immediately; the MP4 changes only when you render. A re-render keeps the current file until the new one is ready, and nothing is uploaded by rendering."}
           </p>
         </div>
       </div>

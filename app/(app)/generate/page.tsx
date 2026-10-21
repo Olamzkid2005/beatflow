@@ -25,6 +25,7 @@ import {
   releaseArtifact,
   type UploadSelection,
 } from "@/lib/artifact-ownership";
+import { fillDescriptionTokens } from "@/lib/release-templates";
 import { readSettings } from "@/lib/settings";
 import { browserTimeZone, nextScheduleValue, toUtcIso8601 } from "@/lib/time";
 import { useChannel } from "@/lib/use-channel";
@@ -120,7 +121,11 @@ function UploadStudio() {
   // reading local storage in these initializers cannot run during SSR.
   const [defaults, setDefaults] = useState(readSettings);
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState(() => defaults.descriptionTemplate);
+  const [description, setDescription] = useState(() =>
+    fillDescriptionTokens(defaults.descriptionTemplate, {
+      producer_name: defaults.producerName,
+    }),
+  );
   const [tags, setTags] = useState<string[]>(() => [...defaults.defaultTags]);
   // Resolve the working zone before the default: the input holds wall time in
   // that zone, not in the browser's zone.
@@ -166,7 +171,9 @@ function UploadStudio() {
       const next = readSettings();
       setDefaults(next);
       if (metadataTouchedRef.current) return;
-      setDescription(next.descriptionTemplate);
+      setDescription(
+        fillDescriptionTokens(next.descriptionTemplate, { producer_name: next.producerName }),
+      );
       setTags([...next.defaultTags]);
       setImmediatePrivacy(next.defaultVisibility);
     };
@@ -200,6 +207,23 @@ function UploadStudio() {
       chunkSize,
       channelTitle: channel?.title ?? null,
     });
+  }
+
+  // A manually chosen MP4 resets the title and, while the producer has not
+  // edited them, re-fills the description template for that release.
+  function selectManualFile(selected: File | null) {
+    setSelection(chooseFile(selected));
+    titleTouchedRef.current = false;
+    const nextTitle = selected ? titleFromFileName(selected.name) : "";
+    setTitle(nextTitle);
+    if (!metadataTouchedRef.current) {
+      setDescription(
+        fillDescriptionTokens(defaults.descriptionTemplate, {
+          track_name: nextTitle,
+          producer_name: defaults.producerName,
+        }),
+      );
+    }
   }
 
   const descriptionBytes = new TextEncoder().encode(description).length;
@@ -240,10 +264,33 @@ function UploadStudio() {
       <RenderStudio
         producerName={defaults.producerName}
         uploading={busy}
-        onSourceChange={(trackTitle) => { titleTouchedRef.current = false; setTitle(trackTitle); }}
-        onRenderedFile={(rendered, artifactId, trackTitle) => {
+        onSourceChange={(trackTitle) => {
+          titleTouchedRef.current = false;
+          setTitle(trackTitle);
+          if (!metadataTouchedRef.current) {
+            setDescription(
+              fillDescriptionTokens(defaults.descriptionTemplate, {
+                track_name: trackTitle,
+                producer_name: defaults.producerName,
+              }),
+            );
+          }
+        }}
+        onRenderedFile={(rendered, artifactId, trackTitle, details) => {
           setSelection(adoptArtifact(rendered, artifactId));
           if (!titleTouchedRef.current) setTitle(trackTitle);
+          // Templates keep the release title, producer, key and BPM in sync until
+          // the producer edits the description themselves.
+          if (!metadataTouchedRef.current) {
+            setDescription(
+              fillDescriptionTokens(defaults.descriptionTemplate, {
+                track_name: trackTitle,
+                producer_name: defaults.producerName,
+                bpm: details.bpm,
+                key: details.key,
+              }),
+            );
+          }
         }}
         onReleaseArtifact={(artifactId) =>
           setSelection((current) => releaseArtifact(current, artifactId))
@@ -311,10 +358,7 @@ function UploadStudio() {
                 accept="video/mp4"
                 disabled={busy}
                 onChange={(event) => {
-                  const selected = event.target.files?.[0] ?? null;
-                  setSelection(chooseFile(selected));
-                  titleTouchedRef.current = false;
-                  setTitle(selected ? titleFromFileName(selected.name) : "");
+                  selectManualFile(event.target.files?.[0] ?? null);
                 }}
                 className="peer sr-only"
               />
@@ -331,11 +375,7 @@ function UploadStudio() {
                   setDragging(false);
                   if (busy) return;
                   const dropped = event.dataTransfer.files?.[0];
-                  if (dropped) {
-                    setSelection(chooseFile(dropped));
-                    titleTouchedRef.current = false;
-                    setTitle(titleFromFileName(dropped.name));
-                  }
+                  if (dropped) selectManualFile(dropped);
                 }}
                 className={cn(
                   "group relative flex aspect-video cursor-pointer flex-col items-center justify-center overflow-hidden border-b border-surface-container-highest bg-surface-container-lowest text-center outline-none transition focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50",

@@ -219,3 +219,58 @@ external-device playback remain open external acceptance items.
 
 Re-verified: lint, TypeScript, build, 125 tests, 16 Studio checks (including batch preview and
 FFmpeg export), and 25 upload assertions.
+
+---
+
+## Preview iteration and description templates (20 October 2026)
+
+Two owner requests: a reusable release description built from the channel's type-beat
+post, and a preview that does not throw away a finished MP4 when something is adjusted.
+
+### Description template
+
+- `lib/release-templates.ts` holds the "Type beat · license + contact" body and
+  `fillDescriptionTokens()`. Tokens (`{{year}}`, `{{track_name}}`, `{{producer_name}}`,
+  `{{key}}`, `{{bpm}}`) fill from data the app already has; `[BRACKETS]` stay visible for
+  the owner's links and handles, and `[TRACK NAME]` / `[KEY]` / `[BPM]` are the explicit
+  "put your release details here" markers.
+- Settings → Starting description gained an "Insert a template" picker (replace is
+  confirmed when text exists). The upload desk fills tokens on mount, on a new source, on
+  a render handoff (including the render's BPM/key), and on a settings refresh — only while
+  the description is untouched. Batch drafts fill per track from the filename.
+- Tests: 6 unit assertions (sections present, byte limit, no leftover tokens, fallbacks,
+  idempotence, unknown tokens untouched, hint list matches the body).
+
+### Non-destructive re-render
+
+- `lib/render-signature.ts` signs every input that changes the encoded file. The studio
+  keeps the signature of the last successful render and compares it with the live inputs.
+- The replace confirmation is gone. A re-render no longer releases the previous blob, URL,
+  or upload artifact up front: the new file is encoded alongside it and swapped in only on
+  success. Failure and cancel leave the existing MP4 playable and uploadable.
+- UI states: "MP4 · matches preview" vs "MP4 · previous settings", a "Preview updated"
+  notice naming the render action, and a progress note that the current file stays
+  available. Cancelled/error copy now says the previous MP4 is unchanged.
+- Trade-off: during a re-render both MP4 blobs are in memory briefly (worst case ~2 × 112 MB
+  at 3 Mbps for a 5-minute Orbital render, still under the 1536 MiB renderer budget, but not
+  measured by `memory:check`, which never re-renders).
+- `tools/rerender-check.mjs` (`npm run rerender:check`) proves it in production Chrome: stale
+  badge after an edit, old file still playing mid-render, no dialog, new file and
+  "matches preview" after completion.
+
+### Tag suggestions
+
+- `lib/tag-suggestions.ts` holds three groups of starting tags (genre, release type,
+  discovery) plus `parseTagText`, `addTagToText`, `mergeTag` and `hasTag`. Free text is
+  still the source of truth; suggestions only shorten typing.
+- `components/ui/tag-suggestions.tsx` is a native `<select>` with `<optgroup>`s, so keyboard,
+  screen-reader and mobile behaviour come from the platform. Tags already in the field are
+  disabled and labelled `· added`.
+- Settings → Default tags and the onboarding tag step both expose the picker. Onboarding
+  keeps its comma-separated text field (helpers normalise separators and ignore duplicates
+  by case); Settings keeps the chip-based `TagInput`, and picking a suggestion merges once.
+
+Re-verified: 156 tests, TypeScript, ESLint, production build, `rerender:check`,
+`onboarding:check` (now also drives the template picker, desk fill and both tag pickers),
+`upload:check` (25/25, including render, handoff, discard and navigation guards), and
+`a11y:check` (0 automated violations, settings picker included).
