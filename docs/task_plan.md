@@ -274,3 +274,51 @@ Re-verified: 156 tests, TypeScript, ESLint, production build, `rerender:check`,
 `onboarding:check` (now also drives the template picker, desk fill and both tag pickers),
 `upload:check` (25/25, including render, handoff, discard and navigation guards), and
 `a11y:check` (0 automated violations, settings picker included).
+
+---
+
+## Missing photos and Orbital export quality (21 October 2026)
+
+Owner requests: explain what happens with no cover/background image and whether the app can
+find one, and debug the uploaded Orbital video looking wrong and playing laggy.
+
+### Missing background image
+
+- First Light, Pulse and Grid declare a `background_image` binding, so `assertRequiredAssets`
+  stops the render with a readable error; Orbital's solid scene needs none. Before this
+  session the only way forward was to find a file. Clipboard paste was never supported.
+- Three original 1920×1080 backgrounds already shipped in `public/images/orbital/` but were
+  not reachable from the studio. `lib/starter-backgrounds.ts` exposes them, and
+  `components/ui/starter-backgrounds.tsx` renders one-click thumbnails under the file input.
+  Choosing one fetches the same-origin JPEG, wraps it in a `File`, and feeds the ordinary
+  decode/preview/render path — so it is downscaled and validated exactly like an upload.
+  No web search, network lookup or external service is involved.
+- The onboarding artwork step and the studio's missing-image error now mention the starters.
+- Tests: unique metadata, every file is a real 1920×1080 JPEG, stable File name/type, and
+  readable failures for 404, network and empty responses. `motion:check` clicks a starter on
+  First Light, asserts the preview repaints and renders the starter without a chosen file.
+
+### Orbital export colour and motion
+
+- Confirmed defect: `encode.ts` pre-applied a sRGB→BT.709 OETF LUT and then tagged the same
+  pixels limited-range BT.709. WebCodecs converts RGB→YUV itself, so the transfer was applied
+  twice and exports decoded far darker than the preview (a #08080d field decoded as ~1,3,2;
+  #404040 decoded as 48; #808080 as 115). The fix hands `getImageData()` straight to
+  `VideoSample` and keeps the limited-range BT.709 tag; measured on the real export the same
+  field now decodes as 8,9,13. The LUT and its old “128 → 115” assertion were removed.
+- Checked (not defects): the 6 s Orbital export is constant 30 fps (timescale 57 600, 1 920
+  ticks per frame, 180 packets, no duplicate frames), front-loaded moov, colour tags in both
+  `colr` and SPS, and audio starts at 0. AAC adds encoder padding, so the audio track is
+  6.080 s against a 6.000 s video with no edit list — a ~21 ms offset, not perceptible lag.
+- The effective video bitrate on the dark Orbital scene is ~0.85 Mbps (3 Mbps is a cap, not
+  a promise). A constant-rate experiment did not raise it, so the profile stayed at 3 Mbps
+  rather than forcing bits the encoder does not need.
+- Orbital motion is intentionally slow (rotation 0.75 RPM, pulse ≤ 4.5 %), and measured
+  frame-to-frame change is small: median 0.012/255 mean absolute difference per frame on the
+  real export. Rotation/Sensitivity/Max pulse are owner controls; the design deliberately
+  avoids fast flicker. The remaining “laggy playback” report needs the actual YouTube URL or
+  uploaded file to separate YouTube processing from 30 fps cadence.
+
+Re-verified: 160 tests, TypeScript, ESLint, production build, `motion:check` (8 checks,
+including the `#08080d` decode guard, non-destructive cancel and the starter flow),
+`onboarding:check`, `upload:check` 25/25 and `a11y:check` 0 violations.

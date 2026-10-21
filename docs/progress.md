@@ -373,3 +373,25 @@ measurable locally, so they were measured instead of deferred.
   violations.
 - Not covered: a re-render of a 5-minute Orbital track (the memory check still renders once
   per cycle), and the two-blob peak during a re-render is inferred rather than measured.
+
+## Session: no-photo path and Orbital colour (21 October 2026)
+
+- Added bundled starter backgrounds (`lib/starter-backgrounds.ts`, three original 1920×1080
+  JPEGs already in `public/images/orbital/`) with a one-click picker in the render studio.
+  No web search or external service: a starter is fetched from this origin and becomes a
+  normal `File`, so missing artwork is no longer a dead end for First Light/Pulse/Grid.
+- Fixed the export colour pipeline: the canvas is sRGB and WebCodecs already converts it to
+  limited-range BT.709, but the encoder pre-applied a second BT.709 OETF. Exports decoded
+  far darker than the preview (#08080d → ~1,3,2; #404040 → 48 instead of 64). With the LUT
+  removed, the real export decodes the field as 8,9,13. `motion:check` now asserts that.
+- `motion:check` also follows the non-destructive re-render contract: a cancelled re-render
+  keeps the previous MP4 downloadable under the same URL, instead of the old
+  “no artifact after cancel” expectation.
+- Inspected the export timing: 180 packets at exactly 30 fps, no duplicate frames, 6.000 s
+  video, 6.080 s AAC (padding, no edit list → ~21 ms offset), front moov, BT.709 tags.
+- Bitrate on this dark scene averages ~0.85 Mbps against the 3 Mbps cap; forcing constant
+  rate did not change it, so the profile is unchanged. Motion remains deliberately slow
+  (median 0.012/255 frame-to-frame change); “laggy” playback still needs the actual YouTube
+  link or file to distinguish YouTube processing from 30 fps cadence.
+- Verified: 160 tests, `tsc --noEmit`, ESLint, production build, `motion:check` (8),
+  `onboarding:check`, `upload:check` 25/25, `a11y:check` 0 violations.

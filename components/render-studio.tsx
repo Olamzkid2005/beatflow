@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "@/components/ui/icon";
+import { StarterBackgrounds } from "@/components/ui/starter-backgrounds";
 import {
   Badge,
   Button,
@@ -519,7 +520,9 @@ export function RenderStudio({
     }
     if (imageError) return;
     if (needsImage && !imageFile) {
-      setError("This template needs a background image. Choose a photo or switch to Orbital.");
+      setError(
+        "This template needs a background image. Choose a photo, use a starter background, or switch to Orbital.",
+      );
       return;
     }
     if (!bpmValid) {
@@ -636,7 +639,7 @@ export function RenderStudio({
           </div>
           <h2 className="mt-2 text-xl font-semibold tracking-[-0.02em]">Render a beat video</h2>
           <p className="mt-1 max-w-xl text-sm leading-6 text-on-surface-variant">
-            Pick a template, then add an MP3 and a background photo. The render happens in this
+            Pick a template, then add an MP3 and a background photo or starter image. The render happens in this
             browser and produces a 1080p MP4 ready to download or send to the upload desk.
           </p>
         </div>
@@ -873,6 +876,15 @@ export function RenderStudio({
               }}
             />
           </Field>
+
+          <StarterBackgrounds
+            disabled={locked}
+            className={needsImage && !imageFile ? "rounded-xl border border-outline-variant/60 bg-surface-container-lowest/60 p-3" : undefined}
+            onSelect={(file) => {
+              setImageError(null);
+              setImageFile(file);
+            }}
+          />
 
           {imageError ? (
             <p role="alert" className="rounded-lg border border-error/25 bg-error-container/15 px-3 py-2 text-xs leading-5 text-error">

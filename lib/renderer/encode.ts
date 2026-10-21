@@ -9,7 +9,7 @@ import {
 } from "mediabunny";
 
 import { RENDER_AUDIO, RENDER_VIDEO } from "./capabilities";
-import { BT709_COLOR_SPACE, convertSrgbToBt709 } from "./color";
+import { BT709_COLOR_SPACE } from "./color";
 import { assertExportCanvas, normalizeFps } from "./validate";
 
 export type EncodeStage = "video" | "audio" | "finalize";
@@ -49,10 +49,11 @@ function payloadError(): Error {
  * (spec section 5 step 6). The caller owns the canvas; the frame count is
  * derived from the audio duration so both tracks end together.
  *
- * Static scenes are read once and converted from the sRGB transfer function to
- * BT.709. Animated scenes are drawn through `drawFrame` and converted once per
- * frame, then encoded through a `VideoSample` with an explicit colour space so
- * the H.264 SPS and `colr` box stay limited-range BT.709.
+ * Static scenes are read once. Animated scenes are drawn through `drawFrame`
+ * and read once per frame. The canvas pixels stay sRGB: WebCodecs performs the
+ * single RGB→limited-range BT.709 conversion when each `VideoSample` is encoded,
+ * and the explicit colour space keeps the H.264 SPS and `colr` box truthful.
+ * Converting here as well would apply the transfer twice and crush dark tones.
  */
 export async function encodeMp4({
   canvas,
@@ -108,10 +109,10 @@ export async function encodeMp4({
   const totalFrames = Math.max(1, Math.ceil(duration * frameRate));
   const progressEvery = Math.max(1, Math.floor(totalFrames / 200));
 
-  // Static scenes never redraw, so reading and converting once is enough.
+  // Static scenes never redraw, so reading the pixels once is enough.
   const staticPixels = drawFrame
     ? null
-    : convertSrgbToBt709(context.getImageData(0, 0, canvas.width, canvas.height).data);
+    : context.getImageData(0, 0, canvas.width, canvas.height).data;
 
   try {
     await output.start();
@@ -126,10 +127,7 @@ export async function encodeMp4({
       let pixels = staticPixels;
       if (drawFrame) {
         drawFrame(timestamp, duration);
-        pixels = convertSrgbToBt709(
-          context.getImageData(0, 0, canvas.width, canvas.height).data,
-          true,
-        );
+        pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
       }
       if (!pixels) throw new Error("The export frame could not be read.");
 

@@ -16,6 +16,8 @@ export const STATIC_VIDEO_BITRATE = 1_800_000;
 /**
  * Provisional animated bitrate between the static baseline and the design's
  * 4.5 Mbps option. The 1.8/3/4.5 comparison still needs owner visual review.
+ * Measured Orbital exports average far below this ceiling (~0.85 Mbps) because
+ * the scene is dark and flat, so this is a target, not a file-size promise.
  */
 export const ANIMATED_VIDEO_BITRATE = 3_000_000;
 

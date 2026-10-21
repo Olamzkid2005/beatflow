@@ -88,11 +88,11 @@ const TOUR_STEPS: TourStep[] = [
     selector: "#render-image",
     eyebrow: "03 · Artwork",
     title: "Set the atmosphere",
-    body: "First Light, Pulse, and Grid need a background photo. Orbital can run without one. Images are decoded and downscaled to the canvas in this tab; rendering never sends them anywhere.",
+    body: "First Light, Pulse, and Grid need a background photo; Orbital can run without one. Choose a starter background or add your own. Images are decoded and downscaled to the canvas in this tab and are never sent anywhere.",
     action: "Add a photo if your template needs one. A wide, high-contrast image works best behind text.",
     interactive: true,
     practice: {
-      instruction: "Add a background photo, or skip this practice if you chose Orbital.",
+      instruction: "Pick a starter background or add a photo, or skip this practice if you chose Orbital.",
       success: "Artwork ready. Its colours drive the composition in the preview.",
       check: (doc) => hasFile(doc, "#render-image"),
     },

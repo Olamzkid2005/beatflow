@@ -10,7 +10,8 @@
  *    to the same frame,
  *  - a downloaded 30 fps MP4 with the right packet count/duration/colour tags,
  *  - decoded MP4 frames differ between the quiet and loud sections,
- *  - cancelling a render returns the UI to "cancelled" with no artifact.
+ *  - cancelling a re-render returns to "cancelled" while keeping the previous
+ *    MP4 downloadable under the same URL (re-rendering is non-destructive).
  *
  * No Google call is made. Needs Chrome; set CHROME_PATH to override.
  */
@@ -363,9 +364,13 @@ try {
     };
     const quiet = await sink.getCanvas(1.2);
     const loud = await sink.getCanvas(4.4);
+    const corner = Array.from(
+      quiet.canvas.getContext('2d').getImageData(4, 4, 1, 1).data.slice(0, 3),
+    );
     return {
       packets: stats.packetCount,
       rate: stats.averagePacketRate,
+      bitrate: stats.averageBitrate,
       duration: await video.computeDuration(),
       width: video.displayWidth,
       height: video.displayHeight,
@@ -374,6 +379,7 @@ try {
       sampleRate: audio?.sampleRate ?? null,
       channels: audio?.numberOfChannels ?? null,
       color: [color.primaries, color.transfer, color.matrix, color.fullRange].join('/'),
+      corner,
       quiet: hash(quiet),
       loud: hash(loud),
     };
@@ -389,10 +395,18 @@ try {
   assert.ok(Math.abs(decoded.rate - 30) < 0.5, `rate ${decoded.rate}`);
   assert.ok(Math.abs(decoded.duration - 6) < 0.15, `duration ${decoded.duration}`);
   assert.equal(decoded.color, "bt709/bt709/bt709/false");
+  // The Orbital canvas is #08080d. A second transfer function in the encoder
+  // used to decode this corner as near-black (about 1,3,2), so exports looked
+  // much darker and flatter than the preview.
+  const field = [8, 8, 13];
+  assert.ok(
+    decoded.corner.every((value, index) => Math.abs(value - field[index]) <= 6),
+    `decoded #08080d field as ${decoded.corner.join(",")}`,
+  );
   assert.notEqual(decoded.quiet, decoded.loud, "the exported frames did not react to energy");
   record(
     "decoded export is 30 fps H.264/AAC and differs across quiet/loud frames",
-    `${decoded.packets} packets · ${decoded.quiet} → ${decoded.loud}`,
+    `${decoded.packets} packets · ${Math.round(decoded.bitrate / 1000)} kbps · field ${decoded.corner.join(",")}`,
   );
 
   const tags = readColorTags(bytes);
@@ -400,18 +414,60 @@ try {
   assert.deepEqual(tags.sps, { present: true, fullRange: false, primaries: 1, transfer: 1, matrix: 1 });
   record("container colr and SPS VUI are limited-range BT.709");
 
-  // Cancel a second render through the UI. The previous artifact is released
-  // at the start of the job, so a cancellation cannot leave a finished file.
+  // Cancel a second render through the UI. Re-rendering is non-destructive, so
+  // the finished MP4 from the first render must survive a cancelled attempt.
+  const beforeCancel = await evaluate(
+    "document.querySelector('a[download]')?.getAttribute('href') ?? null",
+  );
   await clickText("button", "Render MP4 · 30 fps");
   await waitFor("document.body.innerText.includes('Encoding video frames')", 30_000);
   await clickText("button", "Cancel");
   await waitFor("document.body.innerText.includes('Render cancelled')", 30_000);
+  const afterCancel = await evaluate(`({
+    link: [...document.querySelectorAll('a')].find((a) => a.textContent.includes('Download MP4'))?.getAttribute('href') ?? null,
+    badge: document.body.innerText.includes('MP4 · matches preview'),
+    keepsFile: document.body.innerText.includes('previous MP4 is unchanged'),
+  })`);
+  assert.equal(beforeCancel !== null, true, "the first render produced no download link to protect");
   assert.equal(
-    await evaluate("[...document.querySelectorAll('a')].some((a) => a.textContent.includes('Download MP4'))"),
-    false,
-    "a cancelled render left a downloadable artifact",
+    afterCancel.link,
+    beforeCancel,
+    "cancelling replaced or removed the previous download link",
   );
-  record("cancel during video encoding returns to cancelled with no artifact");
+  assert.equal(afterCancel.badge, true, "the surviving file was no longer labelled as matching the preview");
+  assert.equal(afterCancel.keepsFile, true, "the cancelled state did not say the previous MP4 is unchanged");
+  record("cancel keeps the previous MP4 downloadable under the same URL");
+
+  // A template that requires a photo is no longer a dead end: a bundled starter
+  // must reach the preview and render without a manually chosen file.
+  await evaluate("document.querySelector('input[value=\"first-light\"]').click()");
+  await waitFor("document.querySelector('#render-image') !== null && !document.querySelector('#render-image').disabled");
+  await sleep(300);
+  const beforeStarter = await evaluate("window.__previewHash()");
+  await evaluate(
+    "document.querySelector('button[aria-label=\"Use Silver fog as the background image\"]').click()",
+  );
+  await waitFor(
+    "![...document.querySelectorAll('button')].some((button) => button.textContent.includes('Loading…'))",
+    30_000,
+  );
+  await sleep(300);
+  const afterStarter = await evaluate("window.__previewHash()");
+  assert.notEqual(afterStarter, beforeStarter, "the starter background did not reach the preview");
+  const previousHref = await evaluate(
+    "document.querySelector('a[download]')?.getAttribute('href') ?? null",
+  );
+  await clickText("button", "Render MP4");
+  await waitFor(
+    `(document.querySelector('a[download]')?.getAttribute('href') ?? null) !== ${JSON.stringify(previousHref)}`,
+    120_000,
+  );
+  assert.equal(
+    await evaluate("document.body.innerText.includes('could not be loaded')"),
+    false,
+    "a starter background failed to load",
+  );
+  record("a bundled starter background reaches the preview and renders without an uploaded photo");
 
   assert.deepEqual(pageErrors, [], "page raised an exception");
   const outputDir = await mkdtemp(join(tmpdir(), "beatflow-motion-proof-"));
