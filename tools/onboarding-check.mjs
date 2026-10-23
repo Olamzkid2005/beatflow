@@ -1,8 +1,7 @@
 /**
  * Guided-tour check in a real browser. Seeds a first-run profile, walks the
- * setup dialog, then exercises the tour: spotlight, pointer, hands-on practice
- * for description / tags / schedule, hands-off upload step, pause and resume,
- * and the replay button on Settings.
+ * setup dialog, then exercises the five-step tour: visual style, release details,
+ * scheduling, upload safety, pause and resume, and replay from Settings.
  *
  *   npm run build && npm run onboarding:check
  *
@@ -200,8 +199,6 @@ try {
       el.dispatchEvent(new Event("change", { bubbles: true }));
       return true;
     })()`);
-  const fieldValue = (selector) =>
-    evaluate(`document.querySelector(${JSON.stringify(selector)})?.value ?? null`);
   const pressTab = async (times, shift = false) => {
     for (let index = 0; index < times; index++) {
       const modifiers = shift ? 8 : 0;
@@ -316,74 +313,43 @@ try {
   await assertAccessible("First-run setup dialog");
   await assertTabTrapped(setupScope, "Setup dialog");
   assert.equal(
+    await evaluate(`document.querySelector("#onboarding-timezone")?.value === "${new Intl.DateTimeFormat().resolvedOptions().timeZone}"`),
+    true,
+    "Timezone should default to the browser's working timezone",
+  );
+  assert.equal(
     await setField(`${setupScope} input`, "Tour Verification Studio"),
     true,
     "Producer name field missing",
   );
-  assert.equal(await clickText("Next", setupScope), true);
-  await waitFor(`document.body.innerText.includes("Choose your starting metadata.")`);
-
-  // The suggestion dropdown writes into the comma-separated field.
-  assert.equal(
-    await selectOption("#onboarding-tag-suggestions", "afrobeats"),
-    true,
-    "Tag suggestion dropdown missing",
-  );
-  await waitFor(`document.querySelector("#onboarding-tags")?.value === "afrobeats"`);
-  assert.equal(await selectOption("#onboarding-tag-suggestions", "instrumental"), true);
-  await waitFor(
-    `document.querySelector("#onboarding-tags")?.value === "afrobeats, instrumental"`,
-  );
-  assert.equal(
-    await selectOption("#onboarding-tag-suggestions", "afrobeats"),
-    false,
-    "An already-picked tag must not be addable twice",
-  );
-  assert.equal(
-    await fieldValue("#onboarding-tags"),
-    "afrobeats, instrumental",
-    "Re-picking a tag changed the field",
-  );
-  assert.equal(
-    await evaluate(
-      `document.querySelector("#onboarding-tag-suggestions option[value='afrobeats']")?.disabled === true`,
-    ),
-    true,
-    "Picked suggestion was not marked as added",
-  );
-  await assertInside(setupScope, "Setup metadata step");
-  await assertAccessible("Setup metadata step");
-
-  assert.equal(
-    await setField(
-      `${setupScope} textarea`,
-      "Prefilled by setup for the tour",
-    ),
-    true,
-    "Starting description field missing",
-  );
-  assert.equal(await clickText("Next", setupScope), true);
-  await waitFor(`document.body.innerText.includes("How should a new release start?")`);
-  await assertInside(setupScope, "Setup dialog");
+  await assertInside(setupScope, "First-run setup dialog");
   assert.equal(await clickText("Save & start the tour", setupScope), true);
   await waitFor(`document.querySelector(${JSON.stringify(`${tourScope} h2`)}) !== null`);
 
-  assert.equal(await tourTitle(), "This is your private beat-to-YouTube studio");
+  assert.equal(await tourTitle(), "Choose your visual style");
+  assert.equal(
+    await evaluate(`document.querySelector(${JSON.stringify(tourScope)})?.innerText.includes("1 / 5")`),
+    true,
+    "Walkthrough must start at step 1 of no more than 5",
+  );
   assert.equal(
     await evaluate(`document.querySelector("#video-description")?.value`),
-    "Prefilled by setup for the tour",
-    "Saved starting description did not reach the mounted upload desk",
+    "",
+    "Quick setup should leave optional description defaults untouched",
   );
   const stored = JSON.parse(await evaluate(`localStorage.getItem("beatflow.onboarding.v1")`));
   assert.equal(stored.setupComplete, true);
   assert.equal(stored.tourComplete, false);
-  assert.deepEqual(
-    JSON.parse(await evaluate(`localStorage.getItem("beatflow.producer-settings.v1")`)).defaultTags,
-    ["afrobeats", "instrumental"],
-    "Suggested tags were not saved as default tags",
+  const savedSettings = JSON.parse(await evaluate(`localStorage.getItem("beatflow.producer-settings.v1")`));
+  assert.equal(savedSettings.producerName, "Tour Verification Studio");
+  assert.equal(
+    savedSettings.timezone,
+    new Intl.DateTimeFormat().resolvedOptions().timeZone,
+    "The required timezone was not saved",
   );
+  assert.deepEqual(savedSettings.defaultTags, [], "Quick setup should leave optional tags unchanged");
+  assert.equal(savedSettings.descriptionTemplate, "", "Quick setup should leave the optional description unchanged");
 
-  await nextStep("Choose your visual signature");
   await assertInside(tourScope, "Tour card");
   await waitFor(`Boolean(document.querySelector(".onboarding-spotlight"))`, 8_000);
   await waitFor(`Boolean(document.querySelector(".onboarding-pointer"))`, 8_000);
@@ -438,43 +404,13 @@ try {
     `Highlighted control must stay clickable: ${JSON.stringify(orbited)}`,
   );
 
-  await nextStep("Bring in the beat");
-  await nextStep("Set the atmosphere");
-  await nextStep("Name the track inside the video");
-  assert.equal(await setField("#render-track-name", "Midnight Loop"), true);
-  await practiceDone();
-  await nextStep("Render privately on this device");
-  await nextStep("Choose what to send to YouTube");
   await nextStep("Your description lives here");
 
   assert.equal(await setField("#video-description", "Produced by Tour Verification Studio"), true);
   await practiceDone();
-  await nextStep("Add tags to describe the release");
-  assert.equal(
-    await evaluate(`(() => {
-      const el = document.querySelector("#video-tags");
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, "type beat");
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-      return true;
-    })()`),
-    true,
-  );
-  await practiceDone();
-  const packedChip = await evaluate(`(() => {
-    const box = document.querySelector("#video-tags")?.parentElement;
-    if (!box) return null;
-    const bounds = box.getBoundingClientRect();
-    return [...box.querySelectorAll("button[aria-label^='Remove ']")].every((button) => {
-      const chip = button.parentElement.getBoundingClientRect();
-      return chip.right <= bounds.right + 1 && chip.left >= bounds.left - 1 && chip.top >= bounds.top - 1 && chip.bottom <= bounds.bottom + 1;
-    });
-  })()`);
-  assert.equal(packedChip, true, "A tag chip escaped the tag box");
   await nextStep("Schedule a release");
   assert.equal(await setField("#video-schedule", "2030-01-16T19:30"), true);
   await practiceDone();
-  await assertInside(tourScope, "Tour card");
   await nextStep("Nothing publishes without your click");
 
   await assertTabTrapped(tourScope, "Hands-off tour step", 12);
@@ -491,7 +427,7 @@ try {
   assert.equal(await clickText("Pause", tourScope), true);
   await waitFor(`document.querySelector(${JSON.stringify(tourScope)}) === null`);
   const paused = JSON.parse(await evaluate(`localStorage.getItem("beatflow.onboarding.v1")`));
-  assert.equal(paused.tourStep, 10);
+  assert.equal(paused.tourStep, 3);
   await waitFor(`document.body.innerText.includes("Resume tour")`);
   assert.equal(
     await evaluate(`[...document.querySelectorAll("button")].find((node) => node.textContent.includes("Resume tour"))?.click(); true`),
@@ -500,16 +436,19 @@ try {
   await waitFor(`document.querySelector(${JSON.stringify(tourScope)}) !== null`);
   assert.equal(await tourTitle(), "Nothing publishes without your click");
 
-  // Settings exposes a replay action that restarts at the welcome step.
+  // Advance to step 5 on /settings
+  await nextStep("Save reusable producer defaults");
+  await waitFor(`document.body.innerText.includes("Producer Settings")`);
+
+  // Settings exposes a replay action that restarts at the first step.
   await clickText("Pause", tourScope);
-  await goto("/settings");
-  await waitFor(`document.body.innerText.includes("Producer settings")`);
+  await waitFor(`document.querySelector(${JSON.stringify(tourScope)}) === null`);
   assert.equal(
     await evaluate(`[...document.querySelectorAll("button")].find((node) => node.textContent.includes("Replay walkthrough"))?.click(); true`),
     true,
   );
   await waitFor(`document.querySelector(${JSON.stringify(tourScope)}) !== null`);
-  assert.equal(await tourTitle(), "This is your private beat-to-YouTube studio");
+  assert.equal(await tourTitle(), "Choose your visual style");
   const replayed = JSON.parse(await evaluate(`localStorage.getItem("beatflow.onboarding.v1")`));
   assert.equal(replayed.tourStep, 0);
   assert.equal(replayed.tourComplete, false);
@@ -535,7 +474,7 @@ try {
   assert.deepEqual(
     JSON.parse(await evaluate(`localStorage.getItem("beatflow.producer-settings.v1")`))
       .defaultTags,
-    ["afrobeats", "instrumental", "trap"],
+    ["trap"],
     "Settings picker did not persist the selected tag",
   );
   // The description template inserts a release layout with fill-in markers.
@@ -558,7 +497,7 @@ try {
   await waitFor(`document.body.innerText.includes("Saved locally")`);
 
   await goto("/generate");
-  await waitFor(`document.body.innerText.includes("Drop your rendered MP4 here")`);
+  await waitFor(`document.body.innerText.includes("Drop an MP4 here or click to choose")`);
   const deskDescription = await evaluate(`document.querySelector("#video-description")?.value ?? ""`);
   assert.equal(
     deskDescription.includes("{{track_name}}"),
@@ -570,7 +509,7 @@ try {
   assert.equal(deskDescription.includes("[BPM]") && deskDescription.includes("[KEY]"), true);
 
   assert.deepEqual(pageErrors, []);
-  console.log("Onboarding check passed: setup, spotlight, practice probes, hand-off guard, pause/resume, replay.");
+  console.log("Onboarding check passed: one-screen required setup, saved name/timezone, five-step tour, spotlight, practice, upload safety, pause/resume, replay.");
 } finally {
   if (socket) socket.close();
   child.kill();

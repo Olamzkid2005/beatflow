@@ -4,16 +4,16 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { Icon } from "@/components/ui/icon";
-import { Button, Card, cn, Input, Textarea } from "@/components/ui/primitives";
-import { TagSuggestionPicker } from "@/components/ui/tag-suggestions";
+import { Button, Card, cn, Input } from "@/components/ui/primitives";
 import {
+  completeOnboardingSetup,
+  nextOnboardingProgress,
   readOnboardingProgress,
   writeOnboardingProgress,
   type OnboardingProgress,
 } from "@/lib/onboarding";
 import {
   captureBaseline,
-  hasFile,
   measuredLayout,
   missingLayout,
   practiceSatisfied,
@@ -21,8 +21,7 @@ import {
   type MeasuredRect,
   type PracticeProbe,
 } from "@/lib/onboarding-tour";
-import { readSettings, writeSettings, type ProducerSettings } from "@/lib/settings";
-import { addTagToText, parseTagText } from "@/lib/tag-suggestions";
+import { readSettings, type ProducerSettings } from "@/lib/settings";
 import { browserTimeZone } from "@/lib/time";
 
 type Practice = PracticeProbe & {
@@ -49,247 +48,72 @@ type TourStep = {
 const TOUR_STEPS: TourStep[] = [
   {
     route: "/generate",
-    eyebrow: "Welcome",
-    title: "This is your private beat-to-YouTube studio",
-    body: "BeatFlow turns an MP3 and a cover photo into a 1080p MP4, then walks that video to YouTube with the metadata and schedule you approve. Rendering happens on this device. Uploading happens only when you press the upload button.",
-    action: "The tour jumps to the real control for each step and waits while you try it. Use Next or the arrow keys when you are ready. Escape pauses; you can resume from the button in the corner.",
-  },
-  {
-    route: "/generate",
     selector: "[data-tour='render-template']",
-    eyebrow: "01 · Design",
-    title: "Choose your visual signature",
-    body: "First Light, Pulse, Grid, and Orbital are complete 1920 × 1080 compositions. The preview updates the moment you pick one. Orbital is the animated, audio-reactive design; the other three are still frames with a photo.",
-    action: "Pick a template on the right. Your first choice is a starting point, not a permanent lock.",
+    eyebrow: "01 · Design & render",
+    title: "Choose your visual style",
+    body: "Pick a 1080p visual preset (First Light, Pulse, Grid, or audio-reactive Orbital), drop in your MP3 and cover art, and click Render MP4 right in this browser.",
+    action: "Pick Orbital to preview the animated 30 fps style. Nothing is uploaded while you render.",
     interactive: true,
     practice: {
-      instruction: "Click Orbital in the template list to see the animated design.",
-      success: "Orbital selected. The preview is now audio-reactive and capped at 5 minutes.",
+      instruction: "Click Orbital in the visual style list to see the animated design.",
+      success: "Orbital selected. Add an MP3 whenever you are ready to render.",
       check: (doc) =>
         Boolean(doc.querySelector("[data-tour='render-template'] input[value='orbital']:checked")),
     },
   },
   {
     route: "/generate",
-    selector: "#render-audio",
-    eyebrow: "02 · Source",
-    title: "Bring in the beat",
-    body: "Select an MP3 or WAV. BeatFlow reads it locally, uses the filename as a starting track title, and analyses the waveform for Orbital. Static designs accept up to 15 minutes; Orbital accepts up to 5.",
-    action: "Choose a short track for your first run. Nothing is uploaded at this step.",
-    interactive: true,
-    practice: {
-      instruction: "Choose an audio file to unlock rendering.",
-      success: "Track loaded. The title field below is prefilled from the filename.",
-      check: (doc) => hasFile(doc, "#render-audio"),
-    },
-  },
-  {
-    route: "/generate",
-    selector: "#render-image",
-    eyebrow: "03 · Artwork",
-    title: "Set the atmosphere",
-    body: "First Light, Pulse, and Grid need a background photo; Orbital can run without one. Choose a starter background or add your own. Images are decoded and downscaled to the canvas in this tab and are never sent anywhere.",
-    action: "Add a photo if your template needs one. A wide, high-contrast image works best behind text.",
-    interactive: true,
-    practice: {
-      instruction: "Pick a starter background or add a photo, or skip this practice if you chose Orbital.",
-      success: "Artwork ready. Its colours drive the composition in the preview.",
-      check: (doc) => hasFile(doc, "#render-image"),
-    },
-  },
-  {
-    route: "/generate",
-    selector: "#render-track-name",
-    eyebrow: "04 · In the frame",
-    title: "Name the track inside the video",
-    body: "This is artwork text, not the YouTube title. It is suggested from the audio filename and can be edited freely. BPM, key, and the message line appear on Orbital.",
-    action: "Type a track name and watch the preview follow it.",
-    interactive: true,
-    practice: {
-      instruction: "Type a track name and watch the preview follow it.",
-      success: "That is exactly how the title will appear in the rendered frame.",
-      watchValue: "#render-track-name",
-    },
-  },
-  {
-    route: "/generate",
-    selector: "[data-tour='render-button']",
-    eyebrow: "05 · Make the video",
-    title: "Render privately on this device",
-    body: "Render MP4 builds the video in this browser. Nothing is uploaded. A long render needs this tab open, and the result is held in memory until you render again or discard it.",
-    action: "Try a short track first. Keep this tab open until the progress bar finishes.",
-    interactive: true,
-    practice: {
-      instruction: "Click Render MP4 to watch the progress. The button unlocks after a track is added.",
-      success: "Rendering started. You can preview, download, or hand the MP4 to the upload desk.",
-      watchClick: "[data-tour='render-button']",
-    },
-  },
-  {
-    route: "/generate",
-    selector: "[data-tour='video-file']",
-    eyebrow: "06 · Release",
-    title: "Choose what to send to YouTube",
-    body: "The upload desk accepts an MP4: the video you just rendered, one you exported earlier, or the included sample. Rendering and uploading are separate actions, so you can prepare the form without publishing anything.",
-    action: "Drop an MP4 here, or use the Sample MP4 link to explore the form safely.",
-    interactive: true,
-    practice: {
-      instruction: "Drop the rendered MP4 into this box to fill the upload form.",
-      success: "Video attached. The upload title is prefilled from the filename.",
-      check: (doc) => hasFile(doc, "#video-file"),
-    },
-  },
-  {
-    route: "/generate",
     selector: "#video-description",
-    eyebrow: "07 · Tell the story",
+    eyebrow: "02 · Release details",
     title: "Your description lives here",
-    body: "Paste credits, tracklist, licensing details, or links. The counter measures YouTube's 5,000-byte limit as you type. Your saved starting description is prefilled and can be rewritten for this release.",
-    action: "Paste a short description now. It is only sent if you later press Start upload.",
+    body: "Once your MP4 is ready, review the title, description, and tags for YouTube. Your saved defaults prefill automatically and can be customized per release.",
+    action: "Type or paste a few words in the description box to try it out.",
     interactive: true,
     practice: {
       instruction: "Paste or type in this box — even a few words is enough.",
-      success: "That is your description. The byte counter updates beside the field label.",
+      success: "Description updated. The byte counter beside the label tracks YouTube's 5,000-byte limit.",
       watchValue: "#video-description",
     },
   },
   {
     route: "/generate",
-    selector: "#video-tags",
-    eyebrow: "08 · Findability",
-    title: "Add tags to describe the release",
-    body: "Type a tag and press Enter or comma to add it. Tags help categorize the video but do not guarantee discovery. Your default tags are loaded automatically and can be removed here.",
-    action: "Add one tag to feel the control. Backspace removes the last tag.",
-    interactive: true,
-    practice: {
-      instruction: "Add a tag and press Enter. Existing default tags are already here.",
-      success: "Tag added. It will be submitted with the upload.",
-      watchTags: "#video-tags",
-    },
-  },
-  {
-    route: "/generate",
     selector: "#video-schedule",
-    eyebrow: "09 · Pick the moment",
+    eyebrow: "03 · Schedule",
     title: "Schedule a release",
-    body: "Pick a future local date and time. BeatFlow converts that wall time in your working timezone to UTC and keeps the upload private until YouTube publishes it. Times less than 10 minutes away are rejected.",
-    action: "Choose a future time. Clear the field to publish with immediate visibility instead.",
+    body: "Pick a future date and time in your working timezone. BeatFlow converts it to UTC and keeps the video private until YouTube publishes it. Clear the field to publish immediately.",
+    action: "Choose a future date and time, or clear the field for immediate visibility.",
     interactive: true,
     practice: {
-      instruction: "Pick a different date and time. Clear the field to publish immediately instead.",
-      success: "Scheduled. The UTC instant and private-until-publish badge appear below.",
+      instruction: "Pick a different date and time in the schedule input.",
+      success: "Scheduled. The UTC time and private-until-publish note update below.",
       watchValue: "#video-schedule",
     },
   },
   {
     route: "/generate",
     selector: "[data-tour='upload-submit']",
-    eyebrow: "10 · Your approval",
+    eyebrow: "04 · Publish",
     title: "Nothing publishes without your click",
-    body: "This is the final hand-off. Review the MP4, title, description, tags, visibility, and schedule first. Start upload sends the file from this browser to Google. YouTube, not this browser, handles processing and publication.",
-    action: "Do not press this during the tour unless you intend to upload. Use the sample MP4 for a deliberate test.",
+    body: "Start upload sends the MP4 directly from this browser to Google. You can also use Batch mode in the top bar whenever you want to render and schedule multiple beats at once.",
+    action: "This button is locked during the walkthrough so you never upload by accident.",
     interactive: false,
   },
   {
     route: "/settings",
     selector: "#producer-name",
-    eyebrow: "11 · Make it yours",
-    title: "Set reusable producer defaults",
-    body: "Producer name seeds artwork, timezone drives schedule conversion, and tags plus the starting description prefill every new upload. Preferred immediate visibility controls unscheduled releases. Everything is stored in this browser.",
-    action: "Change any preference, then press Save settings. Each release can still override these defaults.",
+    eyebrow: "05 · Defaults & templates",
+    title: "Save reusable producer defaults",
+    body: "Set your producer name, timezone, default tags, and description template here, or customize visual layouts in Templates. Everything stays in this browser.",
+    action: "Edit your producer name or click Finish to start making videos.",
     interactive: true,
     practice: {
       instruction: "Edit your producer name, then press Save settings.",
-      success: "That name is your default. Press Save settings to keep it for the next upload.",
+      success: "Producer name updated. Press Save settings to keep it for future releases.",
       check: (doc) => producerNameChanged(doc, readSettings().producerName),
       watchValue: "#producer-name",
     },
   },
-  {
-    route: "/templates",
-    selector: "[data-tour='template-library']",
-    eyebrow: "12 · Build a look",
-    title: "Create a reusable visual identity",
-    body: "My Templates holds presets and blank canvases. Edit text and layers, set producer branding, and save designs locally. Export a .beatflow.json backup to move a template to another browser.",
-    action: "Pick a preset after the tour. Unsaved edits are guarded, and approved batch snapshots stay unchanged.",
-    interactive: false,
-  },
-  {
-    route: "/batch",
-    selector: "[data-tour='batch-files']",
-    eyebrow: "13 · Work in batches",
-    title: "Plan several releases together",
-    body: "Add multiple audio files and choose a saved design. BeatFlow previews a calendar, skips known reserved slots, and lets you review each track before approval.",
-    action: "Nothing enters the queue until you approve the displayed batch.",
-    interactive: true,
-    practice: {
-      instruction: "Add two or more beats to build a batch.",
-      success: "Tracks added. Each one now has its own title, design, and date.",
-      check: (doc) => hasFile(doc, "[data-tour='batch-files']"),
-    },
-  },
-  {
-    route: "/batch",
-    selector: "[data-tour='batch-schedule']",
-    eyebrow: "14 · Set your rhythm",
-    title: "Choose weekly release slots",
-    body: "Set the first eligible date, an IANA timezone, and one or more weekly day/time slots. Each track takes the next free slot. Daylight-saving gaps and ambiguous wall times are skipped rather than guessed.",
-    action: "These rules only prepare a calendar; nothing is uploaded while you choose them.",
-    interactive: true,
-  },
-  {
-    route: "/batch",
-    selector: "#batch-dates",
-    eyebrow: "15 · Review the calendar",
-    title: "Generate dates, then inspect them",
-    body: "The preview assigns a date and local time to every track without contacting YouTube. Check each title, description, tags, artwork, design, and publication time before approval.",
-    action: "Add tracks first, then press Generate calendar preview. Empty dates are safe to explore.",
-    interactive: true,
-  },
-  {
-    route: "/batch",
-    selector: "#batch-approve",
-    eyebrow: "16 · Approve deliberately",
-    title: "Approval saves an immutable snapshot",
-    body: "Approving stores the design and local media for each track, so later template edits cannot silently change queued releases. Export-only batches are available too; uploading needs an explicit setting.",
-    action: "Approval asks for confirmation and does not itself start the queue.",
-    interactive: false,
-  },
-  {
-    route: "/batch",
-    selector: "#batch-start",
-    eyebrow: "17 · Run the queue",
-    title: "Start only when you are ready",
-    body: "The queue renders and uploads one approved job at a time. Keep this tab open. Pause and resume are supported, and an uncertain upload outcome must be reconciled in YouTube Studio rather than blindly retried.",
-    action: "Start approved queue is the action that begins batch work. It stays untouched during the tour.",
-    interactive: false,
-  },
-  {
-    route: "/history",
-    selector: "[data-tour='upload-history']",
-    eyebrow: "18 · Keep track",
-    title: "History records what BeatFlow knows",
-    body: "Review locally recorded uploads and refresh their status from YouTube. A requested schedule or visibility is not proof of publication — rely on a confirmed YouTube status and YouTube Studio when certainty matters.",
-    action: "History lives in this browser. Export backups where offered and avoid clearing site data.",
-    interactive: false,
-  },
-  {
-    route: "/generate",
-    eyebrow: "Done",
-    title: "You know the whole flow now",
-    body: "Design, render, describe, schedule, upload. Batch and templates are there when one release at a time stops scaling. The walkthrough stays in the corner whenever you want to revisit a step.",
-    action: "Start with a short track and a real MP4 render. Nothing leaves this browser until you approve an upload.",
-  },
 ];
-
-function recommendedPreferences(existing: ProducerSettings): ProducerSettings {
-  return {
-    ...existing,
-    timezone: existing.timezone.trim() || browserTimeZone(),
-    defaultTags: [...existing.defaultTags],
-    defaultVisibility: "unlisted",
-  };
-}
 
 function sameRect(a: MeasuredRect, b: MeasuredRect): boolean {
   return (
@@ -310,15 +134,6 @@ function pointerRotation(direction: "up" | "down" | "left" | "right"): string | 
       return "rotate(90 12 12)";
     default:
       return undefined;
-  }
-}
-
-function validTimeZone(value: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en", { timeZone: value }).format();
-    return true;
-  } catch {
-    return false;
   }
 }
 
@@ -343,9 +158,7 @@ export function OnboardingExperience() {
   const [progress, setProgress] = useState<OnboardingProgress>(initialState.progress);
   const [preferences, setPreferences] = useState<ProducerSettings>(initialState.preferences);
   const [mode, setMode] = useState<"closed" | "setup" | "tour">(initialState.mode);
-  const [setupPage, setSetupPage] = useState(0);
   const [stepIndex, setStepIndex] = useState(initialState.step);
-  const [tagsText, setTagsText] = useState(() => initialState.preferences.defaultTags.join(", "));
   const [saveError, setSaveError] = useState("");
   const [target, setTarget] = useState<{
     step: number;
@@ -579,18 +392,19 @@ export function OnboardingExperience() {
   }
 
   function goToStep(index: number) {
-    const safe = Math.max(0, Math.min(index, stepCount - 1));
-    setStepIndex(safe);
-    persist({ ...progress, setupComplete: true, tourComplete: false, tourStep: safe });
+    const next = nextOnboardingProgress(progress, "pause", stepCount, index);
+    setStepIndex(next.tourStep);
+    persist(next);
   }
 
   function advanceTour() {
-    if (stepIndex + 1 >= stepCount) {
-      persist({ ...progress, setupComplete: true, tourComplete: true, tourStep: stepCount });
+    const next = nextOnboardingProgress(progress, "advance", stepCount, stepIndex);
+    persist(next);
+    if (next.tourComplete) {
       setMode("closed");
       return;
     }
-    goToStep(stepIndex + 1);
+    setStepIndex(next.tourStep);
   }
 
   function previousStep() {
@@ -598,23 +412,29 @@ export function OnboardingExperience() {
   }
 
   function pauseTour() {
-    persist({ ...progress, setupComplete: true, tourComplete: false, tourStep: stepIndex });
+    persist(nextOnboardingProgress(progress, "pause", stepCount, stepIndex));
     setMode("closed");
   }
 
   function skipTour() {
-    persist({ ...progress, setupComplete: true, tourComplete: true, tourStep: stepCount });
+    persist(nextOnboardingProgress(progress, "skip", stepCount, stepIndex));
     setMode("closed");
   }
 
-  function startTour(index = 0) {
-    const safe = Math.max(0, Math.min(index, stepCount - 1));
+  function startTour(index?: number) {
+    const next = nextOnboardingProgress(
+      progress,
+      index === undefined ? "start" : "resume",
+      stepCount,
+      index ?? progress.tourStep,
+    );
+    const safe = next.tourStep;
     setStepIndex(safe);
     // Starting from the welcome step is always a fresh playthrough.
     if (safe === 0) setCompletedSteps(new Set());
     setSaveError("");
     setMode("tour");
-    persist({ ...progress, setupComplete: true, tourComplete: false, tourStep: safe });
+    persist(next);
   }
 
   function dismissSetup() {
@@ -622,40 +442,24 @@ export function OnboardingExperience() {
     setMode("closed");
   }
 
-  function finishSetup(useDefaults: boolean) {
+  function finishSetup() {
     setSaveError("");
-    const existing = readSettings();
-    const next = useDefaults
-      ? recommendedPreferences(existing)
-      : {
-          ...preferences,
-          producerName: preferences.producerName.trim(),
-          timezone: preferences.timezone.trim(),
-          defaultTags: tagsText
-            .split(",")
-            .map((tag) => tag.trim())
-            .filter(Boolean),
-          descriptionTemplate: preferences.descriptionTemplate.trim(),
-        };
-    if (!validTimeZone(next.timezone)) {
-      setSaveError("Enter a valid timezone, for example Africa/Lagos, America/New_York, or UTC.");
-      setSetupPage(0);
+    const result = completeOnboardingSetup(preferences);
+    if (!result.ok) {
+      setSaveError(
+        result.reason === "producer-name"
+          ? "Add a producer or artist name to continue."
+          : result.reason === "timezone"
+            ? "Enter a valid timezone, for example Africa/Lagos, America/New_York, or UTC."
+            : "BeatFlow could not save these preferences in this browser. Check storage permissions and try again.",
+      );
       return;
     }
-    try {
-      writeSettings(next);
-      writeOnboardingProgress({ setupComplete: true, tourComplete: false, tourStep: 0 });
-      setPreferences(next);
-      setTagsText(next.defaultTags.join(", "));
-      setProgress({ setupComplete: true, tourComplete: false, tourStep: 0 });
-      setStepIndex(0);
-      setCompletedSteps(new Set());
-      setMode("tour");
-    } catch {
-      setSaveError(
-        "BeatFlow could not save these preferences in this browser. Check storage permissions and try again.",
-      );
-    }
+    setPreferences(result.settings);
+    setProgress(result.progress);
+    setStepIndex(result.progress.tourStep);
+    setCompletedSteps(new Set());
+    setMode("tour");
   }
 
   function handleKey(event: KeyboardEvent) {
@@ -703,21 +507,20 @@ export function OnboardingExperience() {
       const restart = (event as CustomEvent<{ restart?: boolean }>).detail?.restart;
       const stored = readOnboardingProgress();
       if (!stored.setupComplete) {
-        setSetupPage(0);
         setMode("setup");
         return;
       }
-      const nextStep = restart ? 0 : Math.min(stored.tourStep, TOUR_STEPS.length - 1);
-      setStepIndex(nextStep);
-      if (nextStep === 0) setCompletedSteps(new Set());
+      const next = nextOnboardingProgress(
+        stored,
+        restart ? "start" : "resume",
+        TOUR_STEPS.length,
+      );
+      setStepIndex(next.tourStep);
+      if (next.tourStep === 0) setCompletedSteps(new Set());
       setMode("tour");
       try {
-        writeOnboardingProgress({
-          setupComplete: true,
-          tourComplete: false,
-          tourStep: nextStep,
-        });
-        setProgress({ setupComplete: true, tourComplete: false, tourStep: nextStep });
+        writeOnboardingProgress(next);
+        setProgress(next);
         setSaveError("");
       } catch {
         setSaveError("This browser blocked local storage, so your tour position cannot be remembered.");
@@ -809,207 +612,66 @@ export function OnboardingExperience() {
                 </div>
               </div>
               <p className="relative mt-4 max-w-2xl text-sm leading-6 text-on-surface-variant">
-                Three quick questions set the defaults you will reuse on every release. Then a
-                hands-on tour walks the real controls: artwork, render, description, schedule, and
-                upload.
+                Set the name shown on releases and confirm your scheduling timezone. You can change
+                both later in Settings; optional defaults are available there too.
               </p>
-              <div className="relative mt-6 flex gap-2" role="group" aria-label="Setup progress">
-                {["Your profile", "Release defaults", "Publishing style"].map((label, index) => (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => setSetupPage(index)}
-                    aria-current={setupPage === index ? "step" : undefined}
-                    className={cn(
-                      "flex-1 rounded-xl border px-3 py-2 text-left text-xs transition",
-                      setupPage === index
-                        ? "border-primary/50 bg-primary/10 text-primary"
-                        : "border-outline-variant bg-surface-container-low/70 text-on-surface-variant hover:border-outline",
-                    )}
-                  >
-                    <span className="font-mono">0{index + 1}</span>
-                    <span className="ml-2 hidden sm:inline">{label}</span>
-                  </button>
-                ))}
-              </div>
             </div>
 
             <div className="grid gap-6 p-6 sm:grid-cols-[minmax(0,1fr)_230px] sm:p-9">
               <div className="flex flex-col gap-4">
-                {setupPage === 0 ? (
-                  <>
-                    <div>
-                      <p className="font-mono text-[10px] uppercase tracking-[.16em] text-outline">
-                        Identity &amp; time
-                      </p>
-                      <h2 className="mt-1 text-xl font-semibold">What should your releases say?</h2>
-                      <p className="mt-1 text-sm leading-6 text-on-surface-variant">
-                        These choices stay in this browser. They prepare uploads; they never publish
-                        by themselves.
-                      </p>
-                    </div>
-                    <label className="flex flex-col gap-1.5 text-xs font-medium text-on-surface-variant">
-                      Producer / artist name
-                      <Input
-                        autoFocus
-                        value={preferences.producerName}
-                        maxLength={80}
-                        placeholder="e.g. Nova Beats"
-                        onChange={(event) =>
-                          setPreferences({ ...preferences, producerName: event.target.value })
-                        }
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1.5 text-xs font-medium text-on-surface-variant">
-                      Working timezone
-                      <Input
-                        value={preferences.timezone}
-                        list="onboarding-timezones"
-                        placeholder="Africa/Lagos"
-                        onChange={(event) =>
-                          setPreferences({ ...preferences, timezone: event.target.value })
-                        }
-                      />
-                      <datalist id="onboarding-timezones">
-                        {[
-                          "UTC",
-                          "Africa/Lagos",
-                          "Africa/Johannesburg",
-                          "America/New_York",
-                          "America/Chicago",
-                          "America/Los_Angeles",
-                          "Europe/London",
-                          "Europe/Berlin",
-                          "Asia/Tokyo",
-                          "Australia/Sydney",
-                        ].map((zone) => (
-                          <option key={zone} value={zone} />
-                        ))}
-                      </datalist>
-                      <span className="text-[11px] font-normal text-outline">
-                        Schedule fields display this zone. Current browser zone: {browserTimeZone()}.
-                      </span>
-                    </label>
-                  </>
-                ) : null}
-
-                {setupPage === 1 ? (
-                  <>
-                    <div>
-                      <p className="font-mono text-[10px] uppercase tracking-[.16em] text-outline">
-                        Save typing next time
-                      </p>
-                      <h2 className="mt-1 text-xl font-semibold">Choose your starting metadata.</h2>
-                      <p className="mt-1 text-sm leading-6 text-on-surface-variant">
-                        Defaults prefill new uploads and batch drafts. Every release can still be
-                        personalised before it leaves the browser.
-                      </p>
-                    </div>
-                    <div className="flex flex-col gap-1.5 text-xs font-medium text-on-surface-variant">
-                      <label htmlFor="onboarding-tags">Default tags · comma separated</label>
-                      <Input
-                        id="onboarding-tags"
-                        value={tagsText}
-                        placeholder="afrobeats, instrumental, type beat"
-                        onChange={(event) => setTagsText(event.target.value)}
-                      />
-                      <TagSuggestionPicker
-                        id="onboarding-tag-suggestions"
-                        selected={parseTagText(tagsText)}
-                        onSelect={(tag) =>
-                          setTagsText((current) => addTagToText(current, tag))
-                        }
-                      />
-                      <span className="text-[11px] font-normal text-outline">
-                        Use descriptive tags you actually want on your releases. Pick a suggestion
-                        or type your own; duplicates are ignored.
-                      </span>
-                    </div>
-                    <label className="flex flex-col gap-1.5 text-xs font-medium text-on-surface-variant">
-                      Starting description
-                      <Textarea
-                        rows={5}
-                        maxLength={5000}
-                        value={preferences.descriptionTemplate}
-                        placeholder={
-                          "Produced by [your name]\nCredits, tracklist, licensing details, and links…"
-                        }
-                        onChange={(event) =>
-                          setPreferences({
-                            ...preferences,
-                            descriptionTemplate: event.target.value,
-                          })
-                        }
-                      />
-                      <span className="text-[11px] font-normal text-outline">
-                        A starting draft—not a magic template. Replace bracketed notes per release.
-                      </span>
-                    </label>
-                  </>
-                ) : null}
-
-                {setupPage === 2 ? (
-                  <>
-                    <div>
-                      <p className="font-mono text-[10px] uppercase tracking-[.16em] text-outline">
-                        Visibility &amp; care
-                      </p>
-                      <h2 className="mt-1 text-xl font-semibold">
-                        How should a new release start?
-                      </h2>
-                      <p className="mt-1 text-sm leading-6 text-on-surface-variant">
-                        Pick a safe default for uploads without a schedule. A scheduled video is
-                        always private until its publish time.
-                      </p>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {(
-                        [
-                          {
-                            value: "unlisted",
-                            title: "Unlisted first",
-                            detail: "Recommended · check the video before sharing",
-                          },
-                          {
-                            value: "public",
-                            title: "Public immediately",
-                            detail: "For releases ready to go live now",
-                          },
-                        ] as const
-                      ).map((option) => (
-                        <button
-                          key={option.value}
-                          type="button"
-                          aria-pressed={preferences.defaultVisibility === option.value}
-                          onClick={() =>
-                            setPreferences({ ...preferences, defaultVisibility: option.value })
-                          }
-                          className={cn(
-                            "rounded-2xl border p-4 text-left transition",
-                            preferences.defaultVisibility === option.value
-                              ? "border-primary bg-primary/10"
-                              : "border-outline-variant bg-surface-container-lowest hover:border-outline",
-                          )}
-                        >
-                          <span className="text-sm font-semibold">{option.title}</span>
-                          <span className="mt-1 block text-xs leading-5 text-on-surface-variant">
-                            {option.detail}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                    <Card className="p-4">
-                      <div className="flex gap-3">
-                        <Icon name="shield" className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                        <p className="text-xs leading-5 text-on-surface-variant">
-                          Rendering happens on this device. Uploading starts only when you press the
-                          upload button. Preferences, templates, history, and batch files are
-                          browser-local—export template backups and keep your own media copies.
-                        </p>
-                      </div>
-                    </Card>
-                  </>
-                ) : null}
+                <div>
+                  <p className="font-mono text-[10px] uppercase tracking-[.16em] text-outline">
+                    Identity &amp; time
+                  </p>
+                  <h2 className="mt-1 text-xl font-semibold">What should your releases say?</h2>
+                  <p className="mt-1 text-sm leading-6 text-on-surface-variant">
+                    These choices stay in this browser. They prepare uploads; they never publish by
+                    themselves.
+                  </p>
+                </div>
+                <label className="flex flex-col gap-1.5 text-xs font-medium text-on-surface-variant">
+                  Producer / artist name
+                  <Input
+                    autoFocus
+                    value={preferences.producerName}
+                    maxLength={80}
+                    placeholder="e.g. Nova Beats"
+                    onChange={(event) =>
+                      setPreferences({ ...preferences, producerName: event.target.value })
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1.5 text-xs font-medium text-on-surface-variant">
+                  Working timezone
+                  <Input
+                    id="onboarding-timezone"
+                    value={preferences.timezone}
+                    list="onboarding-timezones"
+                    placeholder="Africa/Lagos"
+                    onChange={(event) =>
+                      setPreferences({ ...preferences, timezone: event.target.value })
+                    }
+                  />
+                  <datalist id="onboarding-timezones">
+                    {[
+                      "UTC",
+                      "Africa/Lagos",
+                      "Africa/Johannesburg",
+                      "America/New_York",
+                      "America/Chicago",
+                      "America/Los_Angeles",
+                      "Europe/London",
+                      "Europe/Berlin",
+                      "Asia/Tokyo",
+                      "Australia/Sydney",
+                    ].map((zone) => (
+                      <option key={zone} value={zone} />
+                    ))}
+                  </datalist>
+                  <span className="text-[11px] font-normal text-outline">
+                    Schedule fields display this zone. Current browser zone: {browserTimeZone()}.
+                  </span>
+                </label>
 
                 {saveError ? (
                   <p role="alert" className="text-sm text-error">
@@ -1018,69 +680,38 @@ export function OnboardingExperience() {
                 ) : null}
 
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => (setupPage > 0 ? setSetupPage(setupPage - 1) : dismissSetup())}
-                  >
-                    {setupPage > 0 ? "Back" : "Later"}
+                  <Button type="button" variant="ghost" onClick={dismissSetup}>
+                    Later
                   </Button>
-                  {setupPage < 2 ? (
-                    <Button type="button" onClick={() => setSetupPage(setupPage + 1)}>
-                      Next <Icon name="arrowRight" className="h-4 w-4" />
-                    </Button>
-                  ) : (
-                    <Button type="button" onClick={() => finishSetup(false)}>
-                      <Icon name="check" className="h-4 w-4" />
-                      Save &amp; start the tour
-                    </Button>
-                  )}
+                  <Button type="button" onClick={() => finishSetup()}>
+                    <Icon name="check" className="h-4 w-4" />
+                    Save &amp; start the tour
+                  </Button>
                 </div>
-                <button
-                  type="button"
-                  className="self-start text-xs text-outline underline decoration-outline/50 underline-offset-4 hover:text-on-surface-variant"
-                  onClick={() => finishSetup(true)}
-                >
-                  Skip setup and use recommended defaults
-                </button>
               </div>
 
               <aside className="hidden flex-col gap-3 sm:flex">
                 <Card className="p-4">
                   <div className="flex items-center gap-2 text-primary">
-                    <Icon name="music" className="h-4 w-4" />
+                    <Icon name="shield" className="h-4 w-4" />
                     <span className="font-mono text-[10px] uppercase tracking-[.15em]">
-                      What the tour covers
+                      Ready when you are
                     </span>
                   </div>
-                  <ol className="mt-3 space-y-3 text-xs text-on-surface-variant">
-                    <li>
-                      <b className="text-on-surface">01</b> · Design a 1080p beat video
-                    </li>
-                    <li>
-                      <b className="text-on-surface">02</b> · Render it on this device
-                    </li>
-                    <li>
-                      <b className="text-on-surface">03</b> · Write description and tags
-                    </li>
-                    <li>
-                      <b className="text-on-surface">04</b> · Schedule, then approve
-                    </li>
-                    <li>
-                      <b className="text-on-surface">05</b> · Batch releases on a rhythm
-                    </li>
-                  </ol>
+                  <p className="mt-2 text-xs leading-5 text-on-surface-variant">
+                    These required details are saved only in this browser. Tags, description and
+                    upload visibility can be set later under Settings.
+                  </p>
                 </Card>
                 <Card className="p-4">
                   <div className="flex items-center gap-2 text-tertiary">
                     <Icon name="clock" className="h-4 w-4" />
                     <span className="font-mono text-[10px] uppercase tracking-[.15em]">
-                      About 6 minutes
+                      5 quick tour steps
                     </span>
                   </div>
                   <p className="mt-2 text-xs leading-5 text-on-surface-variant">
-                    Each stop highlights the real control and waits while you try it. Pause anytime;
-                    the next visit resumes where you left off.
+                    See how to create a video, review a release, and upload when you choose.
                   </p>
                 </Card>
               </aside>
