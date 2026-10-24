@@ -49,7 +49,7 @@ export default function BatchStudio(){
   <div className="mx-auto w-full max-w-[1440px] space-y-5 px-4 py-6 sm:px-6 lg:px-8">
    <header className="flex flex-wrap items-center justify-between gap-3">
     <div>
-     <h1 className="text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">Batch Automation</h1>
+     <h1 className="text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">Batch</h1>
      <p className="mt-1 text-sm text-on-surface-variant">
       1. Add multiple beats · 2. Pick weekly slots · 3. Approve &amp; run the queue
      </p>

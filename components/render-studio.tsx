@@ -632,24 +632,21 @@ export function RenderStudio({
     <Card className="p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-outline">
-            <span>Studio</span>
-            <span aria-hidden>/</span>
-            <span className="text-on-surface">Render</span>
-          </div>
-          <h2 className="mt-2 text-xl font-semibold tracking-[-0.02em]">Render a beat video</h2>
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-primary">
+            Step 1 · Create video
+          </p>
+          <h2 className="mt-1 text-xl font-semibold tracking-[-0.02em]">Render a beat video</h2>
           <p className="mt-1 max-w-xl text-sm leading-6 text-on-surface-variant">
-            Pick a template, then add an MP3 and a background photo or starter image. The render happens in this
-            browser and produces a 1080p MP4 ready to download or send to the upload desk.
+            Pick a visual style, add your beat and artwork, then render a 1080p MP4 in this browser.
           </p>
         </div>
         <Badge tone={unsupported ? "danger" : "primary"}>
           <StatusDot tone={unsupported ? "danger" : "primary"} />
-          {unsupported ? "Renderer unavailable" : animated ? "M2 · Audio-reactive" : "M2 · Template engine"}
+          {unsupported ? "Renderer unavailable" : animated ? "30 fps · Audio-reactive" : "1080p · Ready"}
         </Badge>
       </div>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="flex min-w-0 flex-col gap-3">
           <div className="overflow-hidden rounded-xl border border-outline-variant/70 bg-surface-container-lowest">
             <canvas
@@ -802,9 +799,9 @@ export function RenderStudio({
             className="flex flex-col gap-1.5"
           >
             <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-on-surface-variant">
-              Template
+              Visual style
             </span>
-            <div className="flex flex-col gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {TEMPLATE_PRESETS.map((option) => {
                 const selected = option.id === preset.id;
                 return (
@@ -835,11 +832,11 @@ export function RenderStudio({
                       }}
                       className="sr-only"
                     />
-                    <span className="flex items-center gap-2 text-sm font-medium">
+                    <span className="flex items-center justify-between gap-1 text-sm font-medium">
                       {option.template.name}
                       {selected ? <Icon name="check" className="h-3.5 w-3.5 text-primary" /> : null}
                     </span>
-                    <span className="text-xs leading-5 text-on-surface-variant">
+                    <span className="line-clamp-2 text-[11px] leading-4 text-on-surface-variant">
                       {option.description}
                     </span>
                   </label>
@@ -848,7 +845,7 @@ export function RenderStudio({
             </div>
           </div>
 
-          <Field label="Track MP3" htmlFor="render-audio" hint={animated ? "max 5 min for Orbital" : "max 15 min"}>
+          <Field label="Track MP3" htmlFor="render-audio" hint={animated ? "max 5 min" : "max 15 min"}>
             <Input
               id="render-audio"
               type="file"
@@ -863,7 +860,7 @@ export function RenderStudio({
           <Field
             label={needsImage ? "Background image" : "Background image (optional)"}
             htmlFor="render-image"
-            hint={needsImage ? "downscaled to 1920 px" : "adds a photo behind the graphic"}
+            hint={needsImage ? "1920 × 1080" : "optional backdrop"}
           >
             <Input
               id="render-image"
@@ -892,7 +889,7 @@ export function RenderStudio({
             </p>
           ) : null}
 
-          <Field label="Track name" htmlFor="render-track-name" hint="shown in the video">
+          <Field label="Track name" htmlFor="render-track-name" hint="shown in video">
             <Input
               id="render-track-name"
               value={trackName}
@@ -905,9 +902,9 @@ export function RenderStudio({
           </Field>
 
           {animated ? (
-            <div className="flex flex-col gap-4 rounded-xl border border-outline-variant/70 bg-surface-container-lowest/60 p-3">
+            <div className="flex flex-col gap-3 rounded-xl border border-outline-variant/70 bg-surface-container-lowest/60 p-3">
               <div className="grid grid-cols-2 gap-3">
-                <Field label="BPM" htmlFor="render-bpm" hint="20–300, optional">
+                <Field label="BPM" htmlFor="render-bpm" hint="optional">
                   <Input
                     id="render-bpm"
                     inputMode="decimal"
@@ -940,7 +937,7 @@ export function RenderStudio({
                 </p>
               ) : null}
 
-              <Field label="Message" htmlFor="render-message" hint="optional, up to 500 characters">
+              <Field label="Message" htmlFor="render-message" hint="optional">
                 <Input
                   id="render-message"
                   value={message}
@@ -951,98 +948,104 @@ export function RenderStudio({
                 />
               </Field>
 
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-on-surface-variant">
-                  Appearance
-                </span>
-                <Button variant="ghost" size="sm" onClick={shufflePattern} disabled={settingsLocked}>
-                  <Icon name="spark" className="h-3.5 w-3.5" />
-                  Shuffle pattern
-                </Button>
-              </div>
+              <details open className="group border-t border-outline-variant/60 pt-3">
+                <summary className="flex cursor-pointer list-none items-center justify-between rounded-lg text-[11px] font-medium uppercase tracking-[0.14em] text-on-surface-variant transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50">
+                  <span>Orbital appearance &amp; motion</span>
+                  <Icon name="chevronDown" className="h-4 w-4 text-outline transition group-open:rotate-180" />
+                </summary>
+                <div className="mt-3 flex flex-col gap-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-on-surface-variant">Pattern</span>
+                    <Button variant="ghost" size="sm" onClick={shufflePattern} disabled={settingsLocked}>
+                      <Icon name="spark" className="h-3.5 w-3.5" />
+                      Shuffle pattern
+                    </Button>
+                  </div>
 
-              <RangeControl
-                id="orbital-rings"
-                label="Rings"
-                value={graphicSettings.ringCount}
-                min={ORBITAL_BOUNDS.ringCount.min}
-                max={ORBITAL_BOUNDS.ringCount.max}
-                step={1}
-                disabled={settingsLocked}
-                display={String(graphicSettings.ringCount)}
-                onChange={(value) => updateGraphicSettings({ ringCount: value })}
-              />
-              <RangeControl
-                id="orbital-particles"
-                label="Particles"
-                value={graphicSettings.particleCount}
-                min={ORBITAL_BOUNDS.particleCount.min}
-                max={ORBITAL_BOUNDS.particleCount.max}
-                step={50}
-                disabled={settingsLocked}
-                display={String(graphicSettings.particleCount)}
-                onChange={(value) => updateGraphicSettings({ particleCount: value })}
-              />
-              <RangeControl
-                id="orbital-tilt"
-                label="Tilt"
-                value={graphicSettings.tiltDeg}
-                min={ORBITAL_BOUNDS.tiltDeg.min}
-                max={ORBITAL_BOUNDS.tiltDeg.max}
-                step={1}
-                disabled={settingsLocked}
-                display={`${graphicSettings.tiltDeg}°`}
-                onChange={(value) => updateGraphicSettings({ tiltDeg: value })}
-              />
-
-              <div className="flex items-center justify-between gap-2 border-t border-outline-variant/60 pt-3">
-                <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-on-surface-variant">
-                  Motion
-                </span>
-                <label className="flex items-center gap-2 text-xs text-on-surface-variant">
-                  <input
-                    type="checkbox"
-                    checked={graphicSettings.motion.enabled}
+                  <RangeControl
+                    id="orbital-rings"
+                    label="Rings"
+                    value={graphicSettings.ringCount}
+                    min={ORBITAL_BOUNDS.ringCount.min}
+                    max={ORBITAL_BOUNDS.ringCount.max}
+                    step={1}
                     disabled={settingsLocked}
-                    onChange={(event) => updateMotion({ enabled: event.target.checked })}
-                    className="h-4 w-4 accent-[var(--color-primary)]"
+                    display={String(graphicSettings.ringCount)}
+                    onChange={(value) => updateGraphicSettings({ ringCount: value })}
                   />
-                  React to audio
-                </label>
-              </div>
-              <RangeControl
-                id="orbital-sensitivity"
-                label="Sensitivity"
-                value={graphicSettings.motion.sensitivity}
-                min={ORBITAL_BOUNDS.sensitivity.min}
-                max={ORBITAL_BOUNDS.sensitivity.max}
-                step={0.05}
-                disabled={settingsLocked || !graphicSettings.motion.enabled}
-                display={graphicSettings.motion.sensitivity.toFixed(2)}
-                onChange={(value) => updateMotion({ sensitivity: value })}
-              />
-              <RangeControl
-                id="orbital-rotation"
-                label="Rotation"
-                value={graphicSettings.motion.rotationRpm}
-                min={ORBITAL_BOUNDS.rotationRpm.min}
-                max={ORBITAL_BOUNDS.rotationRpm.max}
-                step={0.25}
-                disabled={settingsLocked || !graphicSettings.motion.enabled}
-                display={`${graphicSettings.motion.rotationRpm} rpm`}
-                onChange={(value) => updateMotion({ rotationRpm: value })}
-              />
-              <RangeControl
-                id="orbital-pulse"
-                label="Max pulse"
-                value={graphicSettings.motion.maxPulse}
-                min={ORBITAL_BOUNDS.maxPulse.min}
-                max={ORBITAL_BOUNDS.maxPulse.max}
-                step={0.005}
-                disabled={settingsLocked || !graphicSettings.motion.enabled}
-                display={graphicSettings.motion.maxPulse.toFixed(3)}
-                onChange={(value) => updateMotion({ maxPulse: value })}
-              />
+                  <RangeControl
+                    id="orbital-particles"
+                    label="Particles"
+                    value={graphicSettings.particleCount}
+                    min={ORBITAL_BOUNDS.particleCount.min}
+                    max={ORBITAL_BOUNDS.particleCount.max}
+                    step={50}
+                    disabled={settingsLocked}
+                    display={String(graphicSettings.particleCount)}
+                    onChange={(value) => updateGraphicSettings({ particleCount: value })}
+                  />
+                  <RangeControl
+                    id="orbital-tilt"
+                    label="Tilt"
+                    value={graphicSettings.tiltDeg}
+                    min={ORBITAL_BOUNDS.tiltDeg.min}
+                    max={ORBITAL_BOUNDS.tiltDeg.max}
+                    step={1}
+                    disabled={settingsLocked}
+                    display={`${graphicSettings.tiltDeg}°`}
+                    onChange={(value) => updateGraphicSettings({ tiltDeg: value })}
+                  />
+
+                  <div className="flex items-center justify-between gap-2 border-t border-outline-variant/60 pt-3">
+                    <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-on-surface-variant">
+                      Motion
+                    </span>
+                    <label className="flex items-center gap-2 text-xs text-on-surface-variant">
+                      <input
+                        type="checkbox"
+                        checked={graphicSettings.motion.enabled}
+                        disabled={settingsLocked}
+                        onChange={(event) => updateMotion({ enabled: event.target.checked })}
+                        className="h-4 w-4 accent-[var(--color-primary)]"
+                      />
+                      React to audio
+                    </label>
+                  </div>
+                  <RangeControl
+                    id="orbital-sensitivity"
+                    label="Sensitivity"
+                    value={graphicSettings.motion.sensitivity}
+                    min={ORBITAL_BOUNDS.sensitivity.min}
+                    max={ORBITAL_BOUNDS.sensitivity.max}
+                    step={0.05}
+                    disabled={settingsLocked || !graphicSettings.motion.enabled}
+                    display={graphicSettings.motion.sensitivity.toFixed(2)}
+                    onChange={(value) => updateMotion({ sensitivity: value })}
+                  />
+                  <RangeControl
+                    id="orbital-rotation"
+                    label="Rotation"
+                    value={graphicSettings.motion.rotationRpm}
+                    min={ORBITAL_BOUNDS.rotationRpm.min}
+                    max={ORBITAL_BOUNDS.rotationRpm.max}
+                    step={0.25}
+                    disabled={settingsLocked || !graphicSettings.motion.enabled}
+                    display={`${graphicSettings.motion.rotationRpm} rpm`}
+                    onChange={(value) => updateMotion({ rotationRpm: value })}
+                  />
+                  <RangeControl
+                    id="orbital-pulse"
+                    label="Max pulse"
+                    value={graphicSettings.motion.maxPulse}
+                    min={ORBITAL_BOUNDS.maxPulse.min}
+                    max={ORBITAL_BOUNDS.maxPulse.max}
+                    step={0.005}
+                    disabled={settingsLocked || !graphicSettings.motion.enabled}
+                    display={graphicSettings.motion.maxPulse.toFixed(3)}
+                    onChange={(value) => updateMotion({ maxPulse: value })}
+                  />
+                </div>
+              </details>
 
               <p
                 className="text-xs leading-5 text-on-surface-variant"
@@ -1060,7 +1063,7 @@ export function RenderStudio({
             </div>
           ) : null}
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 pt-1">
             <Button
               data-tour="render-button"
               onClick={handleRender}
@@ -1106,9 +1109,11 @@ export function RenderStudio({
           ) : null}
 
           <p className="text-xs leading-5 text-on-surface-variant">
+            Editing updates this preview immediately; the MP4 changes only when you render, and a
+            re-render keeps the current file until the new one is ready.
             {animated
-              ? "Orbital renders at 30 fps and stays inside a 5-minute limit. Editing updates this preview immediately; the MP4 changes only when you render, and a re-render keeps the current file until the new one is ready."
-              : "Editing updates this preview immediately; the MP4 changes only when you render. A re-render keeps the current file until the new one is ready, and nothing is uploaded by rendering."}
+              ? " Orbital renders at 30 fps with a 5-minute limit."
+              : " Rendering never uploads anything."}
           </p>
         </div>
       </div>

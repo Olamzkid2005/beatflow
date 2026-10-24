@@ -65,25 +65,22 @@ export default async function Home() {
         </div>
       </header>
 
-      <section className="relative z-10 mx-auto grid w-full max-w-6xl gap-12 px-5 pb-20 pt-8 sm:px-8 lg:grid-cols-[1.12fr_0.88fr] lg:items-center lg:gap-16 lg:pt-14">
+      <section className="relative z-10 mx-auto grid w-full max-w-5xl gap-10 px-5 pb-20 pt-8 sm:px-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-center lg:gap-14 lg:pt-16">
         <div>
           <Badge tone="primary">
             <StatusDot />
-            Owner-only studio
+            Private YouTube studio
           </Badge>
 
-          <h1 className="mt-6 max-w-2xl text-balance text-4xl font-semibold leading-[1.03] tracking-[-0.045em] sm:text-6xl">
-            Your beats.
-            <br />
-            <span className="text-primary">Your channel.</span>
+          <h1 className="mt-5 max-w-2xl text-balance text-4xl font-semibold leading-[1.06] tracking-[-0.04em] sm:text-5xl">
+            Turn your beats into YouTube videos in minutes.
           </h1>
 
-          <p className="mt-6 max-w-xl text-base leading-7 text-on-surface-variant sm:text-lg">
-            A private publishing desk for rendered beat videos. Prepare the file, set the
-            release, and send it straight to YouTube from the browser.
+          <p className="mt-5 max-w-xl text-base leading-7 text-on-surface-variant">
+            Drop an audio file, pick a visual template, and render a 1080p MP4 right in your browser—then upload or schedule it directly to your channel.
           </p>
 
-          <div className="mt-8 flex flex-wrap items-center gap-3">
+          <div className="mt-7 flex flex-wrap items-center gap-3">
             {!signedIn ? (
               <form action={signInWithGoogle}>
                 <button type="submit" className={buttonClass({ size: "lg", className: "pr-4" })}>
@@ -113,14 +110,10 @@ export default async function Home() {
                 </button>
               </form>
             )}
-            <span className="flex items-center gap-2 px-2 font-mono text-[10px] uppercase tracking-[0.14em] text-outline">
-              <Icon name="shield" className="h-3.5 w-3.5 text-primary" />
-              Single-owner workspace
-            </span>
           </div>
 
-          <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3 font-mono text-[10px] uppercase tracking-[0.14em] text-outline">
-            {["Browser render", "Resumable upload", "Scheduled release"].map((label) => (
+          <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3 text-xs text-on-surface-variant">
+            {["1. Render 1080p locally", "2. Set title & schedule", "3. Upload to YouTube"].map((label) => (
               <span key={label} className="inline-flex items-center gap-2">
                 <Icon name="check" className="h-3.5 w-3.5 text-primary" />
                 {label}
@@ -131,16 +124,12 @@ export default async function Home() {
 
         <div className="flex flex-col gap-4">
           <Card className="relative overflow-hidden p-5 sm:p-6">
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-primary/10 blur-3xl"
-            />
             <div className="relative flex items-start justify-between gap-4">
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-outline">
                   Access
                 </p>
-                <h2 className="mt-2 text-xl font-semibold tracking-tight">
+                <h2 className="mt-1.5 text-xl font-semibold tracking-tight">
                   {owner ? "Studio unlocked" : signedIn ? "Account not recognized" : "Connect your channel"}
                 </h2>
               </div>
@@ -152,8 +141,7 @@ export default async function Home() {
             {!signedIn ? (
               <>
                 <p className="relative mt-3 text-sm leading-6 text-on-surface-variant">
-                  Sign in with the Google account that owns the target channel. No other
-                  account can reach the upload desk.
+                  Sign in with the Google account that owns your channel. Only the configured owner account can use this workspace.
                 </p>
                 <form action={signInWithGoogle} className="relative mt-5">
                   <button type="submit" className={buttonClass({ size: "lg", className: "w-full" })}>
@@ -161,13 +149,6 @@ export default async function Home() {
                     Continue with Google
                   </button>
                 </form>
-                <div className="relative mt-4 flex items-start gap-2.5 rounded-xl border border-outline-variant/70 bg-surface-container-lowest/70 p-3">
-                  <Icon name="info" className="mt-0.5 h-4 w-4 shrink-0 text-outline" />
-                  <p className="text-xs leading-5 text-on-surface-variant">
-                    Requests only the permissions needed to read your channel and upload a
-                    release. Google tokens stay in the encrypted server session.
-                  </p>
-                </div>
               </>
             ) : owner ? (
               <>
@@ -242,49 +223,6 @@ export default async function Home() {
                 </form>
               </>
             )}
-          </Card>
-
-          <Card className="p-5">
-            <div className="flex items-center justify-between gap-3">
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-outline">
-                Pipeline
-              </p>
-              <Badge tone="success">
-                <StatusDot tone="success" />
-                Ready
-              </Badge>
-            </div>
-            <ul className="mt-4 flex flex-col gap-3">
-              {[
-                ["Owner session", "Verified", true],
-                ["Channel access", "YouTube Data API", true],
-                ["Resumable upload", "Browser → Google", true],
-                ["Scheduled release", "Private until publish", false],
-              ].map(([label, detail, complete]) => (
-                <li key={String(label)} className="flex items-center gap-3">
-                  <span
-                    className={
-                      complete
-                        ? "flex h-5 w-5 items-center justify-center rounded-full bg-primary/15 text-primary"
-                        : "flex h-5 w-5 items-center justify-center rounded-full border border-outline-variant text-outline"
-                    }
-                  >
-                    <Icon name={complete ? "check" : "clock"} className="h-3 w-3" />
-                  </span>
-                  <span className="flex min-w-0 flex-1 items-baseline justify-between gap-3">
-                    <span className="truncate text-sm text-on-surface">{label}</span>
-                    <span className="shrink-0 font-mono text-[10px] text-outline">{detail}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-5 flex items-center justify-center gap-2 rounded-xl border border-outline-variant/60 bg-surface-container-lowest/70 px-3 py-2 font-mono text-[10px] tracking-[0.12em] text-outline">
-              <span>RENDER</span>
-              <Icon name="arrowRight" className="h-3 w-3" />
-              <span>UPLOAD</span>
-              <Icon name="arrowRight" className="h-3 w-3" />
-              <span className="text-tertiary">PUBLISH</span>
-            </div>
           </Card>
         </div>
       </section>

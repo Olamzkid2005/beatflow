@@ -24,29 +24,23 @@ export function AppShell({ user, children }: { user: AppShellUser; children: Rea
         Skip to content
       </a>
       <div aria-hidden className="studio-atmosphere pointer-events-none fixed inset-0 -z-10" />
-      <div aria-hidden className="studio-grid pointer-events-none fixed inset-0 -z-10 opacity-60" />
 
-      <header className="fixed inset-x-0 top-0 z-50 h-14 border-b border-surface-container-highest bg-surface-container-low/95 backdrop-blur">
-        <div className="flex h-full items-center justify-between gap-4 px-4 lg:px-7">
-          <div className="flex min-w-0 items-center gap-2.5">
+      <header className="sticky top-0 z-50 h-14 border-b border-surface-container-highest bg-surface-container-low/95 backdrop-blur">
+        <div className="mx-auto flex h-full max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+          <div className="flex min-w-0 items-center gap-6">
             <Link href="/generate" className="group flex items-center gap-2.5">
-              <span className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-xl border border-primary/30 bg-primary/10">
-                <span className="absolute inset-0 bg-linear-to-br from-primary-container/50 via-transparent to-tertiary/20" />
-                <Icon name="studio" className="relative h-4 w-4 text-primary" />
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-primary/30 bg-primary/10">
+                <Icon name="studio" className="h-4 w-4 text-primary" />
               </span>
-              <span className="flex flex-col leading-none">
-                <span className="text-[13px] font-semibold tracking-[0.18em] text-on-surface">BEATFLOW</span>
-                <span className="mt-1 font-mono text-[9px] tracking-[0.22em] text-outline">STUDIO</span>
-              </span>
+              <span className="text-sm font-semibold tracking-wider text-on-surface">BEATFLOW</span>
             </Link>
+            <NavLinks variant="sidebar" />
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            <span className="hidden items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-1.5 font-mono text-[10px] text-on-surface-variant lg:flex">
+            <span className="hidden items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-lowest px-2.5 py-1 font-mono text-[10px] text-on-surface-variant lg:flex">
               <StatusDot tone="success" />
-              <span className="text-on-surface">Owner</span>
-              <span className="text-outline">·</span>
-              <span>Connected</span>
+              <span>Private studio</span>
             </span>
             <div className="flex items-center gap-1 border-l border-surface-container-highest pl-2">
               <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-outline-variant bg-surface-container-high">
@@ -73,47 +67,9 @@ export function AppShell({ user, children }: { user: AppShellUser; children: Rea
         </div>
       </header>
 
-      <aside className="fixed bottom-0 left-0 top-14 z-40 hidden w-60 flex-col justify-between border-r border-surface-container-highest bg-surface-container-low/85 p-3 backdrop-blur md:flex">
-        <div className="flex flex-col gap-5">
-          <div>
-            <p className="px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-outline">
-              Workstation
-            </p>
-            <NavLinks variant="sidebar" />
-          </div>
-          <div className="mx-1 rounded-xl border border-outline-variant bg-surface-container-lowest/80 p-3">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-outline">Pipeline</span>
-              <span className="font-mono text-[11px] text-primary">Studio</span>
-            </div>
-            <div className="mt-3 flex items-center gap-2 text-xs text-on-surface">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/15 text-primary">
-                <Icon name="check" className="h-3 w-3" />
-              </span>
-              Upload path ready
-            </div>
-            <p className="mt-2 text-xs leading-5 text-on-surface-variant">
-              Local templates and batch rendering are ready. Live YouTube publishing still needs deployed-origin verification.
-            </p>
-          </div>
-        </div>
-
-        <div className="mx-1 flex items-center gap-2 rounded-xl border border-outline-variant bg-surface-container-lowest/80 p-3">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <Icon name="shield" className="h-4 w-4" />
-          </span>
-          <div className="flex min-w-0 flex-col">
-            <span className="truncate text-xs font-medium text-on-surface">Private studio</span>
-            <span className="font-mono text-[10px] text-outline">Owner only</span>
-          </div>
-        </div>
-      </aside>
-
-      <div className="pt-14 md:pl-60">
-        <main id="main-content" tabIndex={-1} className="min-h-[calc(100vh-3.5rem)] pb-20 md:pb-0">
-          {children}
-        </main>
-      </div>
+      <main id="main-content" tabIndex={-1} className="min-h-[calc(100vh-3.5rem)] pb-20 lg:pb-8">
+        {children}
+      </main>
 
       <NavLinks variant="mobile" />
       <OnboardingExperience />

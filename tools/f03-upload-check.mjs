@@ -339,7 +339,7 @@ try {
 
   // A previous page, so back has somewhere to go.
   await goto("/history");
-  await waitFor("document.body.innerText.includes('Release history')");
+  await waitFor("document.querySelector('h1')?.textContent.trim() === 'History'");
   await clickText("a", "Studio");
   await waitFor("location.pathname === '/generate'");
 
@@ -361,7 +361,7 @@ try {
   record("handoff fills an untouched title from the rendered track");
   await setInputValue("#video-title", UPLOAD_TITLE);
 
-  assert.match(await bodyText(), /Private until publish/);
+  assert.match(await bodyText(), /PRIVATE UNTIL PUBLISH/i);
   await setInputValue("#video-schedule", "");
   await waitFor("document.body.innerText.includes('Public immediately')");
   await clickText("button", "Public immediately");
@@ -470,7 +470,7 @@ try {
   pumps.add(pump2);
   await startHeldUpload();
   await clickText("button", "Cancel upload");
-  await waitFor("document.body.innerText.includes('Ready when you are')");
+  await waitFor("document.body.innerText.includes('Upload cancelled')");
   await sleep(300);
   clearInterval(pump2);
   await send("Fetch.disable");
@@ -578,7 +578,7 @@ try {
   record("only explicit confirmation records the recovered ID, with unverified state");
 
   await clickText("a", "History");
-  await waitFor("document.body.innerText.includes('Release history')");
+  await waitFor("document.querySelector('h1')?.textContent.trim() === 'History'");
   await waitFor("document.body.innerText.includes('confirmed-recovered')");
   assert.match(await bodyText(), /Check in Studio/);
   assert.match(await bodyText(), /Privacy unverified/);
@@ -602,7 +602,7 @@ try {
   const timeOrigin = await evaluate("performance.timeOrigin");
   await evaluate("location.reload()");
   await waitFor(`performance.timeOrigin !== ${timeOrigin}`);
-  await waitFor("document.body.innerText.includes('Release history')");
+  await waitFor("document.querySelector('h1')?.textContent.trim() === 'History'");
   await waitFor("!document.body.innerText.includes('Check in Studio')");
   assert.match(await bodyText(), /Published/);
   record("the refreshed status survives a reload via IndexedDB");

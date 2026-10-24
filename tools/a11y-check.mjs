@@ -226,7 +226,7 @@ try {
     { path: "/history", label: "history" },
     { path: "/settings", label: "settings" },
     { path: "/templates", label: "templates", readyText: "Reusable producer branding" },
-    { path: "/batch", label: "batch", readyText: "Durable queue" },
+    { path: "/batch", label: "batch", readyText: "Add beats and choose the batch design" },
   ];
   const results = [];
   for (const page of pages) {

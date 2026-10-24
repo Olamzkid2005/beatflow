@@ -438,7 +438,7 @@ try {
 
   // Advance to step 5 on /settings
   await nextStep("Save reusable producer defaults");
-  await waitFor(`document.body.innerText.includes("Producer Settings")`);
+  await waitFor(`document.querySelector("h1")?.textContent.trim() === "Settings"`);
 
   // Settings exposes a replay action that restarts at the first step.
   await clickText("Pause", tourScope);

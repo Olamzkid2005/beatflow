@@ -232,31 +232,39 @@ function UploadStudio() {
   const channelTone = channelError ? "danger" : channel ? "success" : "neutral";
 
   return (
-    <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-outline">
-            <span>Studio</span>
-            <span aria-hidden>/</span>
-            <span className="text-on-surface">New upload</span>
-          </div>
-          <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">
-            Prepare the next release
+          <h1 className="text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">
+            Studio
           </h1>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-on-surface-variant">
-            Choose the rendered MP4, shape the metadata, and send it straight to your channel.
-            YouTube handles encoding and publication after the upload.
+          <p className="mt-1 text-sm text-on-surface-variant">
+            1. Render your beat video · 2. Choose the MP4 · 3. Set details, schedule, and upload
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={channelTone}>
+          <Badge tone={channelTone} className="max-w-full">
             <StatusDot tone={channelError ? "danger" : channel ? "success" : "muted"} />
-            {channelLoading ? "Checking channel" : channelError ? "Channel offline" : channel ? "Channel connected" : "No channel"}
+            <span className="min-w-0 max-w-[16rem] truncate">
+              {channelLoading
+                ? "Checking channel"
+                : channelError
+                  ? "Channel offline"
+                  : channel
+                    ? `${channel.title ?? "Channel"} · ${formatCount(channel.subscriberCount)} subs`
+                    : "No channel"}
+            </span>
           </Badge>
-          <Link href="/history" className={buttonClass({ variant: "outline", size: "sm" })}>
-            <Icon name="history" className="h-3.5 w-3.5" />
-            History
+          {channelError ? (
+            <Link href="/" className={buttonClass({ variant: "outline", size: "sm" })}>
+              <Icon name="refresh" className="h-3.5 w-3.5" />
+              Reconnect
+            </Link>
+          ) : null}
+          <Link href="/batch" className={buttonClass({ variant: "outline", size: "sm" })}>
+            <Icon name="studio" className="h-3.5 w-3.5" />
+            Batch mode
           </Link>
         </div>
       </header>
@@ -297,59 +305,22 @@ function UploadStudio() {
         }
       />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="flex min-w-0 flex-col gap-5">
-          <Card className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 items-center gap-3">
-              {channelLoading ? (
-                <>
-                  <span className="h-10 w-10 animate-pulse rounded-full bg-surface-container-high" />
-                  <div className="flex flex-col gap-2">
-                    <span className="h-3.5 w-36 animate-pulse rounded bg-surface-container-high" />
-                    <span className="h-3 w-24 animate-pulse rounded bg-surface-container-high" />
-                  </div>
-                </>
-              ) : channelError ? (
-                <>
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-error/20 bg-error-container/20 text-error">
-                    <Icon name="alert" className="h-4 w-4" />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">Channel unavailable</p>
-                    <p className="mt-0.5 truncate text-xs text-on-surface-variant" title={channelError}>
-                      {channelError}
-                    </p>
-                  </div>
-                </>
-              ) : channel ? (
-                <>
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-outline-variant bg-surface-container-high">
-                    {channel.avatar ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={channel.avatar} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <Icon name="youtube" className="h-4 w-4 text-primary" />
-                    )}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{channel.title ?? channel.id}</p>
-                    <p className="mt-0.5 font-mono text-[10px] text-outline">
-                      {formatCount(channel.subscriberCount)} subscribers ·{" "}
-                      {formatCount(channel.videoCount)} videos
-                    </p>
-                  </div>
-                </>
-              ) : null}
-            </div>
-            <div className="flex items-center gap-2 sm:pl-4">
-              <Link href="/" className={buttonClass({ variant: "ghost", size: "sm" })}>
-                <Icon name={channelError ? "refresh" : "user"} className="h-3.5 w-3.5" />
-                {channelError ? "Reconnect" : "Account"}
-              </Link>
-            </div>
-          </Card>
-
           <Card className="overflow-hidden">
+            <div className="flex items-center justify-between border-b border-outline-variant/60 px-4 py-3 sm:px-5">
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-primary">
+                  Step 2 · Video file
+                </p>
+                <h2 className="text-base font-semibold">MP4 to upload</h2>
+              </div>
+              <Badge tone={file ? "primary" : "neutral"}>
+                <StatusDot tone={file ? "primary" : "muted"} />
+                {file ? "MP4 ready" : "Waiting for MP4"}
+              </Badge>
+            </div>
+
             <div className="relative">
               <input
                 ref={fileInputRef}
@@ -378,51 +349,25 @@ function UploadStudio() {
                   if (dropped) selectManualFile(dropped);
                 }}
                 className={cn(
-                  "group relative flex aspect-video cursor-pointer flex-col items-center justify-center overflow-hidden border-b border-surface-container-highest bg-surface-container-lowest text-center outline-none transition focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50",
+                  "group relative flex min-h-48 cursor-pointer flex-col items-center justify-center overflow-hidden border-b border-surface-container-highest bg-surface-container-lowest p-6 text-center outline-none transition focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50",
                   dragging && "bg-primary/5",
                   busy && "cursor-not-allowed opacity-70",
                 )}
               >
-                <div aria-hidden className="studio-grid absolute inset-0 opacity-50" />
-                <div
-                  aria-hidden
-                  className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(148,125,255,0.16),transparent_45%)]"
-                />
-
-                <div className="relative flex flex-col items-center gap-4 px-6">
-                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/25 bg-primary/10 text-primary shadow-[0_20px_50px_-24px_rgba(148,125,255,0.9)] transition group-hover:scale-105">
-                    <Icon name={file ? "movie" : "upload"} className="h-6 w-6" />
+                <div className="relative flex flex-col items-center gap-3">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/25 bg-primary/10 text-primary transition group-hover:scale-105">
+                    <Icon name={file ? "movie" : "upload"} className="h-5 w-5" />
                   </span>
                   <div>
                     <p className="max-w-full break-all text-base font-medium">
-                      {file ? file.name : "Drop your rendered MP4 here"}
+                      {file ? file.name : "Drop an MP4 here or click to choose"}
                     </p>
                     <p className="mt-1 text-xs leading-5 text-on-surface-variant">
                       {file
                         ? `${formatBytes(file.size)} · ${file.type || "video/mp4"} · ready to upload`
-                        : "or click to browse. Choose the MP4 you want to publish."}
+                        : "Or click “Use for upload” on your rendered video above."}
                     </p>
                   </div>
-                  <span className="rounded-lg border border-outline-variant/70 bg-surface-container-low/80 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-on-surface-variant">
-                    {file ? "Replace file" : "Choose MP4"}
-                  </span>
-                </div>
-
-                <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-md border border-outline-variant/60 bg-surface-container-lowest/80 px-2 py-1 font-mono text-[9px] uppercase tracking-[0.14em] text-outline">
-                  <StatusDot tone={file ? "primary" : "muted"} />
-                  {file ? "Ready" : "No source"}
-                </div>
-                <div className="absolute right-3 top-3 rounded-md border border-outline-variant/60 bg-surface-container-lowest/80 px-2 py-1 font-mono text-[9px] uppercase tracking-[0.14em] text-outline">
-                  16:9 · MP4
-                </div>
-                <div aria-hidden className="absolute inset-x-0 bottom-0 flex h-16 items-end justify-center gap-1 px-6 opacity-40">
-                  {[9, 18, 12, 26, 16, 34, 22, 42, 28, 18, 31, 14, 24, 11, 19].map((height, index) => (
-                    <span
-                      key={index}
-                      className="w-1 rounded-full bg-linear-to-t from-primary/20 to-primary"
-                      style={{ height: `${height}px` }}
-                    />
-                  ))}
                 </div>
               </label>
             </div>
@@ -432,7 +377,7 @@ function UploadStudio() {
                 <p className="truncate text-sm font-medium">
                   {file ? file.name : "No video selected"}
                 </p>
-                <p className="mt-1 font-mono text-[10px] text-outline">
+                <p className="mt-0.5 font-mono text-[10px] text-outline">
                   {file
                     ? `${formatBytes(file.size)} · ${file.type || "video/mp4"}`
                     : "MP4 · rendered or exported file"}
@@ -642,20 +587,21 @@ function UploadStudio() {
               </div>
             </div>
           ) : null}
-
         </div>
 
         <form id="upload-form" onSubmit={handleSubmit} className="flex min-w-0 flex-col gap-5">
           <fieldset disabled={busy} className="contents">
-            <Card className="p-4 sm:p-5">
+            <Card data-tour="publishing-schedule" className="p-4 sm:p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-outline">
-                    Metadata
+                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-primary">
+                    Step 3 · Publish to YouTube
                   </p>
-                  <h2 className="mt-1 text-base font-semibold">Video details</h2>
+                  <h2 className="mt-1 text-base font-semibold">Release details &amp; schedule</h2>
                 </div>
-                <Badge tone="neutral">YouTube</Badge>
+                <Link href="/settings" className="text-xs text-primary hover:underline">
+                  Edit defaults
+                </Link>
               </div>
 
               <div className="mt-4 flex flex-col gap-4">
@@ -702,65 +648,43 @@ function UploadStudio() {
                     placeholder="beat, instrumental, type beat…"
                   />
                 </Field>
-              </div>
-            </Card>
 
-            <Card data-tour="publishing-schedule" className="p-4 sm:p-5">
-              <div className="flex items-center gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Icon name="calendar" className="h-4 w-4" />
-                </span>
-                <div>
-                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-outline">
-                    Release
+                <div className="border-t border-outline-variant/60 pt-4">
+                  <Field
+                    label="Publish at"
+                    htmlFor="video-schedule"
+                    hint={timeZone}
+                    error={scheduleError ?? undefined}
+                  >
+                    <Input
+                      id="video-schedule"
+                      data-tour="video-schedule"
+                      type="datetime-local"
+                      value={schedule}
+                      onChange={(event) => {
+                        setSchedule(event.target.value);
+                        setScheduleError(null);
+                      }}
+                    />
+                  </Field>
+                  {schedule && scheduleUtc ? (
+                    <p className="mt-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-outline">
+                      Sends as {scheduleUtc} · wall time in {timeZone} · Private until publish
+                    </p>
+                  ) : schedule ? (
+                    <p className="mt-1.5 text-xs leading-5 text-error">
+                      This time is not valid in {timeZone}. Choose another time.
+                    </p>
+                  ) : (
+                    <p className="mt-1.5 text-xs leading-5 text-on-surface-variant">
+                      No schedule · uploads {immediatePrivacy} immediately
+                    </p>
+                  )}
+                  <p className="mt-1.5 text-xs leading-5 text-on-surface-variant">
+                    Sent as UTC ISO 8601 and kept private until publication. Clear the field to
+                    choose immediate visibility.
                   </p>
-                  <h2 className="text-base font-semibold">Publishing schedule</h2>
-                </div>
-              </div>
 
-              <div className="mt-4 flex flex-col gap-4">
-                <Field
-                  label="Publish at"
-                  htmlFor="video-schedule"
-                  hint={timeZone}
-                  error={scheduleError ?? undefined}
-                >
-                  <Input
-                    id="video-schedule"
-                    data-tour="video-schedule"
-                    type="datetime-local"
-                    value={schedule}
-                    onChange={(event) => {
-                      setSchedule(event.target.value);
-                      setScheduleError(null);
-                    }}
-                  />
-                </Field>
-                {schedule && scheduleUtc ? (
-                  <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-outline">
-                    Sends as {scheduleUtc} · wall time in {timeZone}
-                  </p>
-                ) : schedule ? (
-                  <p className="text-xs leading-5 text-error">
-                    This time is not valid in {timeZone}. Choose another time.
-                  </p>
-                ) : (
-                  <p className="text-xs leading-5 text-on-surface-variant">
-                    No schedule · uploads {immediatePrivacy} immediately
-                  </p>
-                )}
-                <p className="text-xs leading-5 text-on-surface-variant">
-                  Sent as UTC ISO 8601 and kept private until publication. Clear the field to
-                  choose immediate visibility.
-                </p>
-
-                <div className="rounded-xl border border-outline-variant/60 bg-surface-container-lowest/60 p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs text-on-surface-variant">Visibility</span>
-                    <Badge tone={schedule ? "tertiary" : immediatePrivacy === "public" ? "success" : "neutral"}>
-                      {schedule ? "Private until publish" : immediatePrivacy === "public" ? "Public" : "Unlisted"}
-                    </Badge>
-                  </div>
                   {!schedule ? (
                     <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Immediate visibility">
                       {(["unlisted", "public"] as const).map((value) => (
@@ -779,16 +703,9 @@ function UploadStudio() {
                         </Button>
                       ))}
                     </div>
-                  ) : (
-                    <p className="mt-2 text-xs leading-5 text-on-surface-variant">
-                      Scheduled uploads stay private until the publish time.
-                    </p>
-                  )}
-                  <div className="mt-2 flex items-center justify-between gap-3">
-                    <span className="text-xs text-on-surface-variant">Category</span>
-                    <span className="font-mono text-[10px] text-on-surface">Music</span>
-                  </div>
+                  ) : null}
                 </div>
+
               </div>
             </Card>
 
@@ -799,14 +716,14 @@ function UploadStudio() {
                 </span>
                 <div>
                   <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-outline">
-                    Upload
+                    Advanced
                   </p>
                   <h2 className="text-base font-semibold">Upload settings</h2>
                 </div>
               </div>
 
               <div className="mt-4 flex flex-col gap-2">
-                <Field label="Chunk size" htmlFor="video-chunk">
+                <Field label="Chunk size" htmlFor="video-chunk" hint="8 MiB standard">
                   <Select
                     id="video-chunk"
                     value={chunkSize}
@@ -817,8 +734,8 @@ function UploadStudio() {
                   </Select>
                 </Field>
                 <p className="text-xs leading-5 text-on-surface-variant">
-                  A non-final 308 needs a file larger than the selected chunk. Use 256 KiB to
-                  exercise the CORS path with a larger MP4.
+                  Only change this to exercise the CORS path. A non-final 308 needs a file larger
+                  than the selected chunk, so use 256 KiB with a larger MP4.
                 </p>
                 {oneRequest ? (
                   <p className="rounded-lg border border-tertiary/20 bg-tertiary-container/10 px-2.5 py-2 text-xs leading-5 text-tertiary">
@@ -829,8 +746,8 @@ function UploadStudio() {
             </Card>
           </fieldset>
 
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-3">
               {busy ? (
                 <Button
                   type="button"
@@ -842,46 +759,17 @@ function UploadStudio() {
                   Cancel upload
                 </Button>
               ) : (
-                <Button data-tour="upload-submit" type="submit" size="lg" className="flex-1 sm:flex-none">
+                <Button data-tour="upload-submit" type="submit" size="lg" className="w-full sm:w-auto">
                   <Icon name="upload" className="h-4 w-4" />
                   Start upload
                 </Button>
               )}
               <span className="flex items-center gap-1.5 font-mono text-[10px] text-outline">
                 <StatusDot tone={busy ? "tertiary" : "muted"} />
-                {busy ? "Upload in progress" : "Ready when you are"}
+                {busy ? "Keep tab open while uploading" : "Uploads directly to YouTube"}
               </span>
             </div>
-            <p className="text-xs leading-5 text-on-surface-variant">
-              The file goes directly from this browser to Google. Nothing is uploaded until you
-              press Start upload.
-            </p>
           </div>
-
-          <Card className="p-4 sm:p-5">
-            <div className="flex items-start gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-tertiary-container/15 text-tertiary">
-                <Icon name="info" className="h-4 w-4" />
-              </span>
-              <div>
-                <p className="text-sm font-medium">Before you upload</p>
-                <ul className="mt-2 space-y-1.5 text-xs leading-5 text-on-surface-variant">
-                  <li className="flex gap-2">
-                    <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-outline" />
-                    Keep this tab open until YouTube confirms the upload.
-                  </li>
-                  <li className="flex gap-2">
-                    <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-outline" />
-                    A scheduled upload stays private until the publish time.
-                  </li>
-                  <li className="flex gap-2">
-                    <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-outline" />
-                    Use the sample MP4 above for a quick first test.
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </Card>
         </form>
       </div>
     </div>

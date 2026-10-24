@@ -8,10 +8,10 @@ import { cn } from "@/components/ui/primitives";
 
 const items: Array<{ href: string; label: string; shortLabel: string; icon: IconName }> = [
   { href: "/generate", label: "Studio", shortLabel: "Studio", icon: "studio" },
-  { href: "/templates", label: "My Templates", shortLabel: "Templates", icon: "studio" },
-  { href: "/batch", label: "Batch automation", shortLabel: "Batch", icon: "movie" },
+  { href: "/batch", label: "Batch", shortLabel: "Batch", icon: "movie" },
+  { href: "/templates", label: "Templates", shortLabel: "Templates", icon: "spark" },
   { href: "/history", label: "History", shortLabel: "History", icon: "history" },
-  { href: "/settings", label: "Producer settings", shortLabel: "Settings", icon: "settings" },
+  { href: "/settings", label: "Settings", shortLabel: "Settings", icon: "settings" },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -23,7 +23,7 @@ export function NavLinks({ variant }: { variant: "sidebar" | "mobile" }) {
 
   if (variant === "sidebar") {
     return (
-      <nav className="flex flex-col gap-1" aria-label="Workspace">
+      <nav className="hidden items-center gap-1 lg:flex" aria-label="Workspace">
         {items.map((item) => {
           const active = isActive(pathname, item.href);
           return (
@@ -32,9 +32,9 @@ export function NavLinks({ variant }: { variant: "sidebar" | "mobile" }) {
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors",
+                "flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium transition-colors",
                 active
-                  ? "bg-surface-container text-primary shadow-[inset_2px_0_0_var(--color-primary)]"
+                  ? "bg-primary/15 text-primary"
                   : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface",
               )}
             >
@@ -49,7 +49,7 @@ export function NavLinks({ variant }: { variant: "sidebar" | "mobile" }) {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-50 flex h-16 items-stretch border-t border-surface-container-highest bg-surface-container-low/95 px-2 backdrop-blur md:hidden"
+      className="fixed inset-x-0 bottom-0 z-50 flex h-16 items-stretch border-t border-surface-container-highest bg-surface-container-low/95 px-2 backdrop-blur lg:hidden"
       aria-label="Mobile primary"
     >
       {items.map((item) => {
